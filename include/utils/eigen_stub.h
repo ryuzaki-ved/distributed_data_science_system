@@ -206,6 +206,43 @@ public:
         result.setRandom();
         return result;
     }
+    
+    // Row and column access
+    Matrix row(Index i) const {
+        Matrix result(1, cols_);
+        for (Index j = 0; j < cols_; ++j) {
+            result(0, j) = (*this)(i, j);
+        }
+        return result;
+    }
+    
+    Matrix col(Index j) const {
+        Matrix result(rows_, 1);
+        for (Index i = 0; i < rows_; ++i) {
+            result(i, 0) = (*this)(i, j);
+        }
+        return result;
+    }
+    
+    // Array operations
+    class ArrayWrapper {
+    private:
+        const Matrix& matrix_;
+    public:
+        ArrayWrapper(const Matrix& matrix) : matrix_(matrix) {}
+        
+        Matrix square() const {
+            Matrix result = matrix_;
+            for (Index i = 0; i < result.size(); ++i) {
+                result.data()[i] = result.data()[i] * result.data()[i];
+            }
+            return result;
+        }
+    };
+    
+    ArrayWrapper array() const {
+        return ArrayWrapper(*this);
+    }
 
 private:
     Index rows_;
@@ -234,6 +271,54 @@ public:
         Scalar result = 0;
         for (Index i = 0; i < size(); ++i) {
             result += (*this)[i] * other[i];
+        }
+        return result;
+    }
+    
+    // Additional vector operations
+    Scalar sum() const {
+        Scalar result = 0;
+        for (Index i = 0; i < size(); ++i) {
+            result += (*this)[i];
+        }
+        return result;
+    }
+    
+    Scalar mean() const {
+        return sum() / size();
+    }
+    
+    Scalar minCoeff() const {
+        if (size() == 0) return 0;
+        Scalar min_val = (*this)[0];
+        for (Index i = 1; i < size(); ++i) {
+            if ((*this)[i] < min_val) min_val = (*this)[i];
+        }
+        return min_val;
+    }
+    
+    Scalar maxCoeff() const {
+        if (size() == 0) return 0;
+        Scalar max_val = (*this)[0];
+        for (Index i = 1; i < size(); ++i) {
+            if ((*this)[i] > max_val) max_val = (*this)[i];
+        }
+        return max_val;
+    }
+    
+    Scalar squaredNorm() const {
+        Scalar result = 0;
+        for (Index i = 0; i < size(); ++i) {
+            result += (*this)[i] * (*this)[i];
+        }
+        return result;
+    }
+    
+    // Static constructors for constant vectors
+    static Vector Constant(Index size, Scalar value) {
+        Vector result(size);
+        for (Index i = 0; i < size; ++i) {
+            result[i] = value;
         }
         return result;
     }

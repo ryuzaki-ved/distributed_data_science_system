@@ -25,7 +25,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # Source files - only basic utilities
 file(GLOB_RECURSE UTILS_SOURCES "src/utils/*.cpp")
 
-# Simple main executable
+# Main executable
 add_executable(dds_demo
     ${UTILS_SOURCES}
     examples/example_usage.cpp
