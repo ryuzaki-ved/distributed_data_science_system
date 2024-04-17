@@ -1,6 +1,0 @@
-D:/Big Projects/Distributed Data Science System/build_simple/CMakeFiles/dds_common.dir
-D:/Big Projects/Distributed Data Science System/build_simple/CMakeFiles/dds_worker.dir
-D:/Big Projects/Distributed Data Science System/build_simple/CMakeFiles/dds_tests.dir
-D:/Big Projects/Distributed Data Science System/build_simple/CMakeFiles/RUN_TESTS.dir
-D:/Big Projects/Distributed Data Science System/build_simple/CMakeFiles/ALL_BUILD.dir
-D:/Big Projects/Distributed Data Science System/build_simple/CMakeFiles/ZERO_CHECK.dir
