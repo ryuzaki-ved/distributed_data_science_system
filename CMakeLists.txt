@@ -22,12 +22,14 @@ endif()
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# Source files - only basic utilities
+# Source files - utilities and storage
 file(GLOB_RECURSE UTILS_SOURCES "src/utils/*.cpp")
+file(GLOB_RECURSE STORAGE_SOURCES "src/storage/*.cpp")
 
 # Main executable
 add_executable(dds_demo
     ${UTILS_SOURCES}
+    ${STORAGE_SOURCES}
     examples/example_usage.cpp
 )
 

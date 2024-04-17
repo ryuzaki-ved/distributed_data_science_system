@@ -4,6 +4,9 @@
     <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\utils\types.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\storage\hadoop_storage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\Big Projects\Distributed Data Science System\examples\example_usage.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
