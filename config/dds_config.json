@@ -1,0 +1,221 @@
+{
+  "system": {
+    "name": "Distributed Data Science System",
+    "version": "1.0.0",
+    "description": "A distributed framework for data science tasks using C++, MPI, and Hadoop",
+    "log_level": "INFO",
+    "log_file": "logs/dds_system.log",
+    "max_log_file_size": "100MB",
+    "max_log_files": 5
+  },
+  
+  "mpi": {
+    "enable": true,
+    "hostfile": "config/mpi_hosts.txt",
+    "max_processes": 64,
+    "timeout": 300,
+    "retry_count": 3,
+    "communication_buffer_size": "1GB",
+    "enable_compression": true,
+    "compression_level": 6
+  },
+  
+  "hadoop": {
+    "enable": true,
+    "namenode_host": "localhost",
+    "namenode_port": 9000,
+    "hdfs_url": "hdfs://localhost:9000",
+    "yarn_resourcemanager_host": "localhost",
+    "yarn_resourcemanager_port": 8032,
+    "hadoop_home": "/usr/local/hadoop",
+    "hdfs_replication_factor": 3,
+    "hdfs_block_size": "128MB",
+    "yarn_memory": "4GB",
+    "yarn_cores": 4
+  },
+  
+  "job_manager": {
+    "host": "localhost",
+    "port": 8080,
+    "max_concurrent_jobs": 10,
+    "job_queue_size": 100,
+    "job_timeout": 3600,
+    "enable_checkpointing": true,
+    "checkpoint_interval": 300,
+    "scheduling_policy": {
+      "type": "LEAST_LOADED",
+      "cpu_weight": 0.4,
+      "memory_weight": 0.3,
+      "network_weight": 0.3,
+      "enable_work_stealing": true,
+      "max_jobs_per_worker": 2,
+      "load_balancing_threshold": 0.2
+    }
+  },
+  
+  "worker": {
+    "num_workers": 4,
+    "worker_config": {
+      "num_threads": 4,
+      "max_memory": "8GB",
+      "data_directory": "/tmp/dds_data",
+      "enable_checkpointing": true,
+      "checkpoint_interval": 300,
+      "heartbeat_interval": 30,
+      "max_jobs_per_worker": 2,
+      "enable_work_stealing": true
+    },
+    "resource_limits": {
+      "max_cpu_usage": 0.9,
+      "max_memory_usage": 0.8,
+      "max_disk_usage": 0.9,
+      "min_available_memory": "1GB"
+    }
+  },
+  
+  "algorithms": {
+    "linear_regression": {
+      "default_learning_rate": 0.01,
+      "default_tolerance": 1e-6,
+      "default_max_iterations": 100,
+      "enable_regularization": false,
+      "default_lambda": 0.1
+    },
+    "logistic_regression": {
+      "default_learning_rate": 0.01,
+      "default_tolerance": 1e-6,
+      "default_max_iterations": 100,
+      "enable_regularization": false,
+      "default_lambda": 0.1,
+      "default_optimizer": "SGD"
+    },
+    "kmeans": {
+      "default_k": 3,
+      "default_max_iterations": 100,
+      "default_tolerance": 1e-6,
+      "default_init_method": "KMEANS_PLUS_PLUS",
+      "default_n_init": 10
+    },
+    "dbscan": {
+      "default_epsilon": 0.5,
+      "default_min_points": 5,
+      "default_distance_metric": "EUCLIDEAN",
+      "enable_approximate_neighbors": false
+    }
+  },
+  
+  "storage": {
+    "default_storage_type": "HDFS",
+    "local_storage": {
+      "base_path": "/tmp/dds_storage",
+      "max_file_size": "1GB",
+      "enable_compression": true
+    },
+    "hdfs_storage": {
+      "base_path": "/dds",
+      "replication_factor": 3,
+      "block_size": "128MB",
+      "enable_compression": true
+    },
+    "data_formats": {
+      "supported_formats": ["csv", "json", "parquet", "binary"],
+      "default_format": "csv",
+      "compression_formats": ["gzip", "snappy", "lz4"]
+    }
+  },
+  
+  "communication": {
+    "protocol": "TCP",
+    "port_range": {
+      "start": 10000,
+      "end": 20000
+    },
+    "message_size_limit": "100MB",
+    "enable_encryption": false,
+    "enable_authentication": true,
+    "timeout": {
+      "connection": 30,
+      "request": 300,
+      "response": 300
+    },
+    "retry": {
+      "enable": true,
+      "max_attempts": 3,
+      "backoff_factor": 2.0,
+      "initial_delay": 1.0
+    }
+  },
+  
+  "monitoring": {
+    "enable": true,
+    "metrics_collection_interval": 30,
+    "performance_monitoring": {
+      "enable": true,
+      "collect_cpu_metrics": true,
+      "collect_memory_metrics": true,
+      "collect_network_metrics": true,
+      "collect_disk_metrics": true
+    },
+    "alerting": {
+      "enable": true,
+      "cpu_threshold": 0.9,
+      "memory_threshold": 0.8,
+      "disk_threshold": 0.9,
+      "job_timeout_threshold": 3600
+    },
+    "logging": {
+      "enable_structured_logging": true,
+      "log_format": "json",
+      "enable_remote_logging": false,
+      "remote_log_endpoint": ""
+    }
+  },
+  
+  "security": {
+    "enable_ssl": false,
+    "ssl_cert_file": "",
+    "ssl_key_file": "",
+    "ssl_ca_file": "",
+    "authentication": {
+      "enable": true,
+      "method": "token",
+      "token_expiry": 3600,
+      "refresh_token_expiry": 86400
+    },
+    "authorization": {
+      "enable": true,
+      "default_role": "user",
+      "admin_users": []
+    }
+  },
+  
+  "client": {
+    "default_config": {
+      "server_host": "localhost",
+      "server_port": 8080,
+      "connection_timeout": 30,
+      "request_timeout": 300,
+      "enable_retry": true,
+      "max_retries": 3,
+      "retry_delay": 1.0
+    },
+    "ui": {
+      "enable_cli": true,
+      "enable_web_ui": false,
+      "web_ui_port": 8081,
+      "enable_interactive_mode": true
+    }
+  },
+  
+  "development": {
+    "debug_mode": false,
+    "enable_profiling": false,
+    "enable_coverage": false,
+    "test_config": {
+      "enable_unit_tests": true,
+      "enable_integration_tests": true,
+      "enable_performance_tests": true,
+      "test_data_size": "100MB"
+    }
+  }
+} 
