@@ -1,0 +1,3 @@
+D:/Big Projects/Distributed Data Science System/build_minimal/CMakeFiles/dds_demo.dir
+D:/Big Projects/Distributed Data Science System/build_minimal/CMakeFiles/ALL_BUILD.dir
+D:/Big Projects/Distributed Data Science System/build_minimal/CMakeFiles/ZERO_CHECK.dir

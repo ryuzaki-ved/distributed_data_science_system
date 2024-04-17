@@ -2,7 +2,7 @@
 
 #include "utils/types.h"
 #include "communication/mpi_communicator.h"
-#include <Eigen/Dense>
+#include "../utils/eigen_stub.h"
 
 namespace dds {
 

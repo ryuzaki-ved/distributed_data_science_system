@@ -1,7 +1,7 @@
 #pragma once
 
 #include "utils/types.h"
-#include <Eigen/Dense>
+#include "../utils/eigen_stub.h"
 #include <vector>
 #include <random>
 #include <string>

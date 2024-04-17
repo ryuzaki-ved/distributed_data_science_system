@@ -4,8 +4,8 @@
 #include <string>
 #include <memory>
 #include <chrono>
-#include <mpi.h>
-#include <Eigen/Dense>
+#include "mpi_stub.h"
+#include "eigen_stub.h"
 
 namespace dds {
 

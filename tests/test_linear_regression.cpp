@@ -1,8 +1,13 @@
 #include "algorithms/linear_regression.h"
 #include "utils/types.h"
 #include "communication/mpi_communicator.h"
-#include <gtest/gtest.h>
-#include <Eigen/Dense>
+// Simple test framework stub
+#define TEST(test_case_name, test_name) void test_##test_case_name##_##test_name()
+#define EXPECT_NEAR(a, b, c) if (std::abs((a) - (b)) > (c)) { std::cout << "Test failed: " << (a) << " != " << (b) << std::endl; }
+#define EXPECT_EQ(a, b) if ((a) != (b)) { std::cout << "Test failed: " << (a) << " != " << (b) << std::endl; }
+#define EXPECT_TRUE(a) if (!(a)) { std::cout << "Test failed: " << #a << " is not true" << std::endl; }
+#define EXPECT_FALSE(a) if ((a)) { std::cout << "Test failed: " << #a << " is not false" << std::endl; }
+#include "../include/utils/eigen_stub.h"
 #include <random>
 #include <iostream>
 

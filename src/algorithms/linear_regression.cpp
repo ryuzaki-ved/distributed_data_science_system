@@ -1,7 +1,7 @@
 #include "algorithms/linear_regression.h"
 #include "communication/mpi_communicator.h"
 #include "utils/types.h"
-#include <Eigen/Dense>
+#include "../../include/utils/eigen_stub.h"
 #include <iostream>
 #include <cmath>
 #include <algorithm>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "utils/types.h"
-#include <mpi.h>
+#include "utils/mpi_stub.h"
 #include <vector>
 #include <memory>
 #include <functional>
