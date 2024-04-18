@@ -334,6 +334,11 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   <ItemGroup>
     <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\utils\types.cpp" />
     <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\storage\hadoop_storage.cpp" />
+    <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\web\web_server.cpp" />
+    <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\database\database_manager.cpp" />
+    <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\algorithms\advanced_algorithms.cpp" />
+    <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\monitoring\system_monitor.cpp" />
+    <ClCompile Include="D:\Big Projects\Distributed Data Science System\src\config\configuration_manager.cpp" />
     <ClCompile Include="D:\Big Projects\Distributed Data Science System\examples\example_usage.cpp" />
   </ItemGroup>
   <ItemGroup />
