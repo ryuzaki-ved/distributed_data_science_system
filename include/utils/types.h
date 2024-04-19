@@ -100,6 +100,21 @@ struct JobMetadata {
     int total_iterations = 0;
 };
 
+// Job info for API responses
+struct JobInfo {
+    std::string job_id;
+    std::string user_id;
+    std::string type;
+    std::string status;
+    std::string created_at;
+    std::string started_at;
+    std::string completed_at;
+    double progress = 0.0;
+    int current_iteration = 0;
+    int total_iterations = 0;
+    std::string error_message;
+};
+
 // Node information
 struct NodeInfo {
     int rank;

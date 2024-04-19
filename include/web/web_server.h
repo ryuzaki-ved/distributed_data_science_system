@@ -8,6 +8,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <mutex>
 
 namespace dds {
 namespace web {

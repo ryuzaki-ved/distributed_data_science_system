@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <mutex>
 
 namespace dds {
 namespace monitoring {

@@ -11,6 +11,9 @@
 namespace dds {
 namespace algorithms {
 
+// Forward declarations
+class DecisionTree;
+
 // Neural Network Layer Types
 enum class LayerType {
     DENSE,
