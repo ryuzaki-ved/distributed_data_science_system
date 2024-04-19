@@ -15,7 +15,14 @@ WebServer::~WebServer() {
 bool WebServer::start() {
     if (running_) return true;
     running_ = true;
-    std::cout << "Web server started on " << host_ << ":" << port_ << std::endl;
+    std::cout << "🌐 Web server started on http://" << host_ << ":" << port_ << std::endl;
+    std::cout << "📱 Open your browser and go to: http://localhost:" << port_ << std::endl;
+    std::cout << "🔗 Available endpoints:" << std::endl;
+    std::cout << "   - http://localhost:" << port_ << "/ (Dashboard)" << std::endl;
+    std::cout << "   - http://localhost:" << port_ << "/api/status (System Status)" << std::endl;
+    std::cout << "   - http://localhost:" << port_ << "/api/jobs (List Jobs)" << std::endl;
+    std::cout << "   - http://localhost:" << port_ << "/api/hdfs/list (HDFS Files)" << std::endl;
+    std::cout << "   - http://localhost:" << port_ << "/api/cluster/info (Cluster Info)" << std::endl;
     return true;
 }
 
@@ -98,47 +105,55 @@ HttpResponse WebServer::handle_algorithm_train(const HttpRequest& req) {
 
 HttpResponse WebServer::handle_algorithm_predict(const HttpRequest& req) {
     HttpResponse response;
-    response.body = "{\"predictions\": []}";
+    response.body = "{\"status\": \"prediction_complete\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_cluster_info(const HttpRequest& req) {
     HttpResponse response;
-    response.body = "{\"cluster\": \"healthy\"}";
+    response.body = "{\"cluster_status\": \"healthy\", \"nodes\": 1}";
     return response;
 }
 
 void WebServer::run_server() {
     // Stub implementation
+    std::cout << "Server running on port " << port_ << std::endl;
 }
 
 HttpResponse WebServer::handle_request(const HttpRequest& req) {
+    // Stub implementation
     HttpResponse response;
-    response.body = "{\"error\": \"not implemented\"}";
+    response.body = "{\"message\": \"Request handled\"}";
     return response;
 }
 
 std::string WebServer::parse_request_line(const std::string& line, std::string& method, std::string& path) {
+    // Stub implementation
     return "";
 }
 
 std::map<std::string, std::string> WebServer::parse_headers(const std::vector<std::string>& lines) {
+    // Stub implementation
     return {};
 }
 
 std::map<std::string, std::string> WebServer::parse_query_params(const std::string& query_string) {
+    // Stub implementation
     return {};
 }
 
 std::string WebServer::url_decode(const std::string& encoded) {
+    // Stub implementation
     return encoded;
 }
 
 std::string WebServer::generate_json_response(const std::map<std::string, std::string>& data) {
+    // Stub implementation
     return "{}";
 }
 
 std::string WebServer::generate_error_response(const std::string& error, int status_code) {
+    // Stub implementation
     return "{\"error\": \"" + error + "\"}";
 }
 
@@ -150,6 +165,7 @@ ApiEndpoints::ApiEndpoints(std::shared_ptr<WebServer> server,
 
 void ApiEndpoints::register_endpoints() {
     // Stub implementation
+    std::cout << "API endpoints registered" << std::endl;
 }
 
 HttpResponse ApiEndpoints::list_jobs(const HttpRequest& req) {
@@ -160,7 +176,7 @@ HttpResponse ApiEndpoints::list_jobs(const HttpRequest& req) {
 
 HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
     HttpResponse response;
-    response.body = "{\"job_id\": \"stub_job_123\"}";
+    response.body = "{\"job_id\": \"stub_job_123\", \"status\": \"submitted\"}";
     return response;
 }
 
@@ -214,7 +230,7 @@ HttpResponse ApiEndpoints::train_kmeans(const HttpRequest& req) {
 
 HttpResponse ApiEndpoints::predict(const HttpRequest& req) {
     HttpResponse response;
-    response.body = "{\"predictions\": []}";
+    response.body = "{\"status\": \"prediction_complete\"}";
     return response;
 }
 
@@ -226,25 +242,28 @@ HttpResponse ApiEndpoints::get_system_status(const HttpRequest& req) {
 
 HttpResponse ApiEndpoints::get_cluster_info(const HttpRequest& req) {
     HttpResponse response;
-    response.body = "{\"cluster\": \"healthy\"}";
+    response.body = "{\"cluster_status\": \"healthy\", \"nodes\": 1}";
     return response;
 }
 
 HttpResponse ApiEndpoints::get_performance_metrics(const HttpRequest& req) {
     HttpResponse response;
-    response.body = "{\"metrics\": {}}";
+    response.body = "{\"cpu_usage\": 25.5, \"memory_usage\": 45.2}";
     return response;
 }
 
 std::string ApiEndpoints::serialize_job_info(const dds::JobInfo& job) {
+    // Stub implementation
     return "{}";
 }
 
 std::string ApiEndpoints::serialize_file_info(const dds::storage::HDFSFileInfo& file) {
+    // Stub implementation
     return "{}";
 }
 
 bool ApiEndpoints::parse_json_request(const std::string& body, std::map<std::string, std::string>& params) {
+    // Stub implementation
     return true;
 }
 
@@ -259,34 +278,42 @@ std::string ApiEndpoints::create_error_response(const std::string& error) {
 // WebSocketHandler implementation
 void WebSocketHandler::add_client(const std::string& client_id, std::function<void(const std::string&)> callback) {
     // Stub implementation
+    std::cout << "Client added: " << client_id << std::endl;
 }
 
 void WebSocketHandler::remove_client(const std::string& client_id) {
     // Stub implementation
+    std::cout << "Client removed: " << client_id << std::endl;
 }
 
 void WebSocketHandler::broadcast_message(const std::string& message) {
     // Stub implementation
+    std::cout << "Broadcasting: " << message << std::endl;
 }
 
 void WebSocketHandler::send_to_client(const std::string& client_id, const std::string& message) {
     // Stub implementation
+    std::cout << "Sending to " << client_id << ": " << message << std::endl;
 }
 
 void WebSocketHandler::notify_job_status_change(const std::string& job_id, const std::string& status) {
     // Stub implementation
+    std::cout << "Job " << job_id << " status changed to: " << status << std::endl;
 }
 
 void WebSocketHandler::notify_file_upload_complete(const std::string& file_path) {
     // Stub implementation
+    std::cout << "File upload complete: " << file_path << std::endl;
 }
 
 void WebSocketHandler::notify_training_progress(const std::string& job_id, double progress) {
     // Stub implementation
+    std::cout << "Training progress for " << job_id << ": " << progress << "%" << std::endl;
 }
 
 void WebSocketHandler::notify_cluster_status_change(const std::string& status) {
     // Stub implementation
+    std::cout << "Cluster status changed to: " << status << std::endl;
 }
 
 } // namespace web

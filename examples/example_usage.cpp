@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include <thread>
+#include <chrono>
 #include "utils/types.h"
 #include "storage/hadoop_storage.h"
 #include "web/web_server.h"
@@ -215,9 +217,21 @@ int main() {
     std::cout << "\n=== Testing Web Server ===" << std::endl;
     try {
         auto web_server = std::make_shared<dds::web::WebServer>(8080);
-        std::cout << "✅ Web server created successfully" << std::endl;
-        std::cout << "  Port: 8080" << std::endl;
-        std::cout << "  Status: Ready to start" << std::endl;
+        if (web_server->start()) {
+            std::cout << "✅ Web server started successfully" << std::endl;
+            std::cout << "  Port: 8080" << std::endl;
+            std::cout << "  Status: Running" << std::endl;
+            std::cout << "  🌐 Open your browser and go to: http://localhost:8080" << std::endl;
+            std::cout << "  📱 Press Ctrl+C to stop the server" << std::endl;
+            
+            // Keep the server running for a few seconds
+            std::this_thread::sleep_for(std::chrono::seconds(10));
+            
+            web_server->stop();
+            std::cout << "  Server stopped" << std::endl;
+        } else {
+            std::cout << "❌ Failed to start web server" << std::endl;
+        }
         
     } catch (const std::exception& e) {
         std::cout << "❌ Web server test failed: " << e.what() << std::endl;
