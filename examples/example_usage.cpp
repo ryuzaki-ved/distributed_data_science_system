@@ -224,8 +224,12 @@ int main() {
             std::cout << "  🌐 Open your browser and go to: http://localhost:8080" << std::endl;
             std::cout << "  📱 Press Ctrl+C to stop the server" << std::endl;
             
-            // Keep the server running for a few seconds
-            std::this_thread::sleep_for(std::chrono::seconds(10));
+            std::cout << "  🌐 Web server is now running!" << std::endl;
+            std::cout << "  📱 You can now access the dashboard at: http://localhost:8080" << std::endl;
+            std::cout << "  ⏹️  Press Enter to stop the server..." << std::endl;
+            
+            // Wait for user input to stop the server
+            std::cin.get();
             
             web_server->stop();
             std::cout << "  Server stopped" << std::endl;
