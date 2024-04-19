@@ -57,74 +57,122 @@ void WebServer::set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> 
 
 HttpResponse WebServer::handle_status(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"running\", \"version\": \"1.0.0\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_jobs_list(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"jobs\": []}";
     return response;
 }
 
 HttpResponse WebServer::handle_job_submit(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"job_id\": \"stub_job_123\", \"status\": \"submitted\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_job_status(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"completed\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_hdfs_list(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"files\": []}";
     return response;
 }
 
 HttpResponse WebServer::handle_hdfs_upload(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"uploaded\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_hdfs_download(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"downloaded\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_algorithm_train(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"training\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_algorithm_predict(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"prediction_complete\"}";
     return response;
 }
 
 HttpResponse WebServer::handle_cluster_info(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"cluster_status\": \"healthy\", \"nodes\": 1}";
     return response;
 }
 
-void WebServer::run_server() {
+void WebServer::run_server(int serverSocket) {
     // Stub implementation
     std::cout << "Server running on port " << port_ << std::endl;
+}
+
+void WebServer::handle_client(int clientSocket) {
+    // Stub implementation
+    std::cout << "Client connected" << std::endl;
+}
+
+HttpRequest WebServer::parse_request(const std::string& request) {
+    // Stub implementation
+    HttpRequest req;
+    req.method = "GET";
+    req.path = "/";
+    return req;
 }
 
 HttpResponse WebServer::handle_request(const HttpRequest& req) {
     // Stub implementation
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"message\": \"Request handled\"}";
     return response;
+}
+
+HttpResponse WebServer::serve_dashboard() {
+    HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "text/html";
+    response.body = "<html><body><h1>DDS System Dashboard</h1><p>Web interface coming soon!</p></body></html>";
+    return response;
+}
+
+std::string WebServer::format_response(const HttpResponse& response) {
+    // Stub implementation
+    return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\": \"ok\"}";
 }
 
 std::string WebServer::parse_request_line(const std::string& line, std::string& method, std::string& path) {
@@ -170,84 +218,112 @@ void ApiEndpoints::register_endpoints() {
 
 HttpResponse ApiEndpoints::list_jobs(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"jobs\": []}";
     return response;
 }
 
 HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"job_id\": \"stub_job_123\", \"status\": \"submitted\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::get_job_status(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"completed\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::cancel_job(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"cancelled\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::list_hdfs_files(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"files\": []}";
     return response;
 }
 
 HttpResponse ApiEndpoints::upload_file(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"uploaded\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::download_file(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"downloaded\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::delete_file(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"deleted\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::train_linear_regression(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"training\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::train_kmeans(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"training\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::predict(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"prediction_complete\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::get_system_status(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"healthy\"}";
     return response;
 }
 
 HttpResponse ApiEndpoints::get_cluster_info(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"cluster_status\": \"healthy\", \"nodes\": 1}";
     return response;
 }
 
 HttpResponse ApiEndpoints::get_performance_metrics(const HttpRequest& req) {
     HttpResponse response;
+    response.status_code = 200;
+    response.headers["Content-Type"] = "application/json";
     response.body = "{\"cpu_usage\": 25.5, \"memory_usage\": 45.2}";
     return response;
 }

@@ -10,6 +10,8 @@
 #include <atomic>
 #include <mutex>
 
+
+
 namespace dds {
 namespace web {
 
@@ -78,8 +80,12 @@ public:
     HttpResponse handle_cluster_info(const HttpRequest& req);
     
 private:
-    void run_server();
+    void run_server(int serverSocket);
+    void handle_client(int clientSocket);
+    HttpRequest parse_request(const std::string& request);
     HttpResponse handle_request(const HttpRequest& req);
+    HttpResponse serve_dashboard();
+    std::string format_response(const HttpResponse& response);
     std::string parse_request_line(const std::string& line, std::string& method, std::string& path);
     std::map<std::string, std::string> parse_headers(const std::vector<std::string>& lines);
     std::map<std::string, std::string> parse_query_params(const std::string& query_string);
