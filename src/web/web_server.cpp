@@ -19,6 +19,8 @@
 #include <condition_variable>
 #include <unordered_map>
 #include <zlib.h>
+#include <cctype>
+#include <sstream>
 
 namespace dds {
 namespace web {
@@ -28,7 +30,8 @@ WebServer::WebServer(int port, const std::string& host)
       total_requests_(0), successful_requests_(0), failed_requests_(0), max_connections_(100), 
       active_connections_(0), connection_timeout_(30), thread_pool_size_(8), shutdown_thread_pool_(false),
       cache_enabled_(true), cache_ttl_(300), max_cache_size_(1000), compression_enabled_(true), 
-      compression_level_(6), min_compression_size_(1024) {
+      compression_level_(6), min_compression_size_(1024), validation_enabled_(true), 
+      max_request_size_(10485760), max_header_size_(8192) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -37,6 +40,7 @@ WebServer::WebServer(int port, const std::string& host)
     std::cout << "🔧 Thread pool initialized with " << thread_pool_size_ << " workers" << std::endl;
     std::cout << "💾 Response cache enabled (TTL: " << cache_ttl_ << "s, Max: " << max_cache_size_ << " entries)" << std::endl;
     std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
+    std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
 }
 
 WebServer::~WebServer() {
@@ -462,6 +466,9 @@ void WebServer::print_analytics() {
     std::cout << "   Cache TTL: " << cache_ttl_ << " seconds" << std::endl;
     std::cout << "   Compression: " << (compression_enabled_ ? "Enabled" : "Disabled") << " (level: " << compression_level_ << ")" << std::endl;
     std::cout << "   Min Compression Size: " << min_compression_size_ << " bytes" << std::endl;
+    std::cout << "   Request Validation: " << (validation_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
+    std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
 }
 
 bool WebServer::acquire_connection() {
@@ -567,6 +574,22 @@ HttpResponse WebServer::handle_request_sync(const HttpRequest& req) {
     HttpResponse response;
     
     try {
+        // Validate request before processing
+        auto validation_result = validate_request(req);
+        if (!validation_result.is_valid) {
+            response.status_code = validation_result.status_code;
+            response.headers["Content-Type"] = "application/json";
+            response.headers["Access-Control-Allow-Origin"] = "*";
+            response.body = "{\"error\": \"" + validation_result.error_message + "\"}";
+            
+            auto end_time = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+            log_response(response, duration);
+            failed_requests_++;
+            total_requests_++;
+            return response;
+        }
+        
         // Route the request based on path and method
         if (req.path == "/" || req.path == "/dashboard") {
             response = serve_dashboard();
@@ -586,8 +609,11 @@ HttpResponse WebServer::handle_request_sync(const HttpRequest& req) {
             // 404 Not Found
             response.status_code = 404;
             response.headers["Content-Type"] = "application/json";
-            response.body = "{\"error\": \"Endpoint not found\", \"path\": \"" + req.path + "\"}";
+            response.body = "{\"error\": \"Endpoint not found\", \"path\": \"" + sanitize_string(req.path) + "\"}";
         }
+        
+        // Sanitize response before sending
+        sanitize_response(response);
         
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
@@ -801,6 +827,270 @@ void WebServer::optimize_response_headers(HttpResponse& response) {
     if (response.status_code == 200) {
         response.headers["Cache-Control"] = "public, max-age=300";
     }
+}
+
+ValidationResult WebServer::validate_request(const HttpRequest& req) {
+    ValidationResult result;
+    result.is_valid = true;
+    
+    if (!validation_enabled_) {
+        return result;
+    }
+    
+    // Validate request size
+    if (req.body.length() > max_request_size_) {
+        result.is_valid = false;
+        result.status_code = 413; // Payload Too Large
+        result.error_message = "Request body too large";
+        std::cout << "🚫 Request validation failed: body size " << req.body.length() << " exceeds limit " << max_request_size_ << std::endl;
+        return result;
+    }
+    
+    // Validate method
+    static const std::vector<std::string> allowed_methods = {"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"};
+    bool method_allowed = false;
+    for (const auto& method : allowed_methods) {
+        if (req.method == method) {
+            method_allowed = true;
+            break;
+        }
+    }
+    
+    if (!method_allowed) {
+        result.is_valid = false;
+        result.status_code = 405; // Method Not Allowed
+        result.error_message = "HTTP method not allowed";
+        std::cout << "🚫 Request validation failed: invalid method " << req.method << std::endl;
+        return result;
+    }
+    
+    // Validate path
+    if (req.path.empty() || req.path.length() > 2048) {
+        result.is_valid = false;
+        result.status_code = 400; // Bad Request
+        result.error_message = "Invalid request path";
+        std::cout << "🚫 Request validation failed: invalid path length " << req.path.length() << std::endl;
+        return result;
+    }
+    
+    // Check for path traversal attempts
+    if (req.path.find("..") != std::string::npos || req.path.find("//") != std::string::npos) {
+        result.is_valid = false;
+        result.status_code = 400; // Bad Request
+        result.error_message = "Invalid path characters detected";
+        std::cout << "🚫 Request validation failed: path traversal attempt detected" << std::endl;
+        return result;
+    }
+    
+    // Validate headers
+    for (const auto& header : req.headers) {
+        if (header.first.length() > max_header_size_ || header.second.length() > max_header_size_) {
+            result.is_valid = false;
+            result.status_code = 400; // Bad Request
+            result.error_message = "Header too large";
+            std::cout << "🚫 Request validation failed: header too large" << std::endl;
+            return result;
+        }
+        
+        // Check for suspicious header values
+        if (contains_suspicious_content(header.second)) {
+            result.is_valid = false;
+            result.status_code = 400; // Bad Request
+            result.error_message = "Suspicious content detected in headers";
+            std::cout << "🚫 Request validation failed: suspicious header content" << std::endl;
+            return result;
+        }
+    }
+    
+    // Validate query parameters
+    for (const auto& param : req.query_params) {
+        if (param.first.length() > 256 || param.second.length() > 1024) {
+            result.is_valid = false;
+            result.status_code = 400; // Bad Request
+            result.error_message = "Query parameter too large";
+            std::cout << "🚫 Request validation failed: query parameter too large" << std::endl;
+            return result;
+        }
+        
+        if (contains_suspicious_content(param.second)) {
+            result.is_valid = false;
+            result.status_code = 400; // Bad Request
+            result.error_message = "Suspicious content detected in query parameters";
+            std::cout << "🚫 Request validation failed: suspicious query parameter content" << std::endl;
+            return result;
+        }
+    }
+    
+    std::cout << "✅ Request validation passed" << std::endl;
+    return result;
+}
+
+void WebServer::sanitize_response(HttpResponse& response) {
+    // Sanitize response headers
+    for (auto& header : response.headers) {
+        header.second = sanitize_string(header.second);
+    }
+    
+    // Sanitize response body for JSON content
+    auto content_type = response.headers.find("Content-Type");
+    if (content_type != response.headers.end() && 
+        content_type->second.find("application/json") != std::string::npos) {
+        response.body = sanitize_json_string(response.body);
+    }
+    
+    // Add security headers
+    response.headers["X-Content-Type-Options"] = "nosniff";
+    response.headers["X-Frame-Options"] = "SAMEORIGIN";
+    response.headers["X-XSS-Protection"] = "1; mode=block";
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    
+    std::cout << "🧹 Response sanitized" << std::endl;
+}
+
+std::string WebServer::sanitize_string(const std::string& input) {
+    if (input.empty()) {
+        return input;
+    }
+    
+    std::string sanitized = input;
+    
+    // Remove null bytes
+    sanitized.erase(std::remove(sanitized.begin(), sanitized.end(), '\0'), sanitized.end());
+    
+    // Replace potentially dangerous characters
+    std::map<char, std::string> dangerous_chars = {
+        {'<', "&lt;"},
+        {'>', "&gt;"},
+        {'"', "&quot;"},
+        {'\'', "&#x27;"},
+        {'&', "&amp;"}
+    };
+    
+    for (const auto& pair : dangerous_chars) {
+        size_t pos = 0;
+        while ((pos = sanitized.find(pair.first, pos)) != std::string::npos) {
+            sanitized.replace(pos, 1, pair.second);
+            pos += pair.second.length();
+        }
+    }
+    
+    // Trim whitespace
+    sanitized.erase(0, sanitized.find_first_not_of(" \t\r\n"));
+    sanitized.erase(sanitized.find_last_not_of(" \t\r\n") + 1);
+    
+    return sanitized;
+}
+
+std::string WebServer::sanitize_json_string(const std::string& json_input) {
+    if (json_input.empty()) {
+        return json_input;
+    }
+    
+    std::string sanitized = json_input;
+    
+    // Remove null bytes
+    sanitized.erase(std::remove(sanitized.begin(), sanitized.end(), '\0'), sanitized.end());
+    
+    // Escape control characters
+    std::stringstream ss;
+    for (char c : sanitized) {
+        if (c < 32 && c != '\t' && c != '\n' && c != '\r') {
+            ss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
+        } else {
+            ss << c;
+        }
+    }
+    
+    return ss.str();
+}
+
+bool WebServer::contains_suspicious_content(const std::string& content) {
+    if (content.empty()) {
+        return false;
+    }
+    
+    // Check for SQL injection patterns
+    static const std::vector<std::string> sql_patterns = {
+        "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "EXEC", "UNION"
+    };
+    
+    std::string upper_content = content;
+    std::transform(upper_content.begin(), upper_content.end(), upper_content.begin(), ::toupper);
+    
+    for (const auto& pattern : sql_patterns) {
+        if (upper_content.find(pattern) != std::string::npos) {
+            std::cout << "⚠️ Suspicious SQL pattern detected: " << pattern << std::endl;
+            return true;
+        }
+    }
+    
+    // Check for XSS patterns
+    static const std::vector<std::string> xss_patterns = {
+        "<SCRIPT", "JAVASCRIPT:", "ONLOAD=", "ONERROR=", "ONCLICK=", "ONMOUSEOVER="
+    };
+    
+    for (const auto& pattern : xss_patterns) {
+        if (upper_content.find(pattern) != std::string::npos) {
+            std::cout << "⚠️ Suspicious XSS pattern detected: " << pattern << std::endl;
+            return true;
+        }
+    }
+    
+    // Check for path traversal patterns
+    static const std::vector<std::string> traversal_patterns = {
+        "../", "..\\", "..%2f", "..%5c", "%2e%2e%2f", "%2e%2e%5c"
+    };
+    
+    for (const auto& pattern : traversal_patterns) {
+        if (upper_content.find(pattern) != std::string::npos) {
+            std::cout << "⚠️ Suspicious path traversal pattern detected: " << pattern << std::endl;
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+bool WebServer::is_valid_json(const std::string& json_string) {
+    if (json_string.empty()) {
+        return false;
+    }
+    
+    // Basic JSON validation - check for balanced braces and brackets
+    int brace_count = 0;
+    int bracket_count = 0;
+    bool in_string = false;
+    bool escaped = false;
+    
+    for (char c : json_string) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        
+        if (c == '\\') {
+            escaped = true;
+            continue;
+        }
+        
+        if (c == '"' && !escaped) {
+            in_string = !in_string;
+            continue;
+        }
+        
+        if (!in_string) {
+            if (c == '{') brace_count++;
+            else if (c == '}') brace_count--;
+            else if (c == '[') bracket_count++;
+            else if (c == ']') bracket_count--;
+            
+            if (brace_count < 0 || bracket_count < 0) {
+                return false;
+            }
+        }
+    }
+    
+    return brace_count == 0 && bracket_count == 0 && !in_string;
 }
 
 // ApiEndpoints implementation
