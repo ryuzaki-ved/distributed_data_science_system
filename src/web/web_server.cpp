@@ -258,18 +258,83 @@ HttpResponse ApiEndpoints::list_jobs(const HttpRequest& req) {
 }
 
 HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Validate request method
+    if (req.method != "POST") {
+        response.status_code = 405;
+        response.headers["Content-Type"] = "application/json";
+        response.body = "{\"error\": \"Method not allowed\", \"allowed_methods\": [\"POST\"]}";
+        return response;
+    }
+    
+    // Validate content type
+    auto content_type = req.headers.find("Content-Type");
+    if (content_type == req.headers.end() || content_type->second.find("application/json") == std::string::npos) {
+        response.status_code = 400;
+        response.headers["Content-Type"] = "application/json";
+        response.body = "{\"error\": \"Invalid content type. Expected application/json\"}";
+        return response;
+    }
+    
+    // Validate request body
+    if (req.body.empty()) {
+        response.status_code = 400;
+        response.headers["Content-Type"] = "application/json";
+        response.body = "{\"error\": \"Request body is required\"}";
+        return response;
+    }
+    
     HttpResponse response;
     response.status_code = 200;
     response.headers["Content-Type"] = "application/json";
     response.body = "{\"job_id\": \"stub_job_123\", \"status\": \"submitted\"}";
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    std::cout << "📊 Job submission processed in " << duration.count() << " μs" << std::endl;
+    
     return response;
 }
 
 HttpResponse ApiEndpoints::get_job_status(const HttpRequest& req) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Validate request method
+    if (req.method != "GET") {
+        response.status_code = 405;
+        response.headers["Content-Type"] = "application/json";
+        response.body = "{\"error\": \"Method not allowed\", \"allowed_methods\": [\"GET\"]}";
+        return response;
+    }
+    
+    // Validate job ID parameter
+    auto job_id = req.query_params.find("job_id");
+    if (job_id == req.query_params.end() || job_id->second.empty()) {
+        response.status_code = 400;
+        response.headers["Content-Type"] = "application/json";
+        response.body = "{\"error\": \"Job ID parameter is required\"}";
+        return response;
+    }
+    
+    // Sanitize job ID (basic validation)
+    std::string sanitized_job_id = job_id->second;
+    if (sanitized_job_id.length() > 100 || sanitized_job_id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_") != std::string::npos) {
+        response.status_code = 400;
+        response.headers["Content-Type"] = "application/json";
+        response.body = "{\"error\": \"Invalid job ID format\"}";
+        return response;
+    }
+    
     HttpResponse response;
     response.status_code = 200;
     response.headers["Content-Type"] = "application/json";
-    response.body = "{\"status\": \"completed\"}";
+    response.body = "{\"job_id\": \"" + sanitized_job_id + "\", \"status\": \"completed\"}";
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    std::cout << "📊 Job status check processed in " << duration.count() << " μs" << std::endl;
+    
     return response;
 }
 
