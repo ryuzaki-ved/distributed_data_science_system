@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <chrono>
 
 namespace dds {
 namespace web {
@@ -58,10 +59,17 @@ void WebServer::set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> 
 }
 
 HttpResponse WebServer::handle_status(const HttpRequest& req) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
     HttpResponse response;
     response.status_code = 200;
     response.headers["Content-Type"] = "application/json";
     response.body = "{\"status\": \"running\", \"version\": \"1.0.0\"}";
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    std::cout << "📊 Status endpoint processed in " << duration.count() << " μs" << std::endl;
+    
     return response;
 }
 
@@ -165,6 +173,8 @@ HttpResponse WebServer::handle_request(const HttpRequest& req) {
 }
 
 HttpResponse WebServer::serve_dashboard() {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
     HttpResponse response;
     response.status_code = 200;
     response.headers["Content-Type"] = "text/html";
@@ -185,6 +195,10 @@ HttpResponse WebServer::serve_dashboard() {
         response.status_code = 500;
         response.body = "<html><body><h1>DDS System Dashboard</h1><p>Error: Could not load dashboard.html</p><p>Please check server logs for details.</p></body></html>";
     }
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    std::cout << "📊 Dashboard endpoint processed in " << duration.count() << " μs" << std::endl;
     
     return response;
 }
