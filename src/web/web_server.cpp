@@ -176,9 +176,14 @@ HttpResponse WebServer::serve_dashboard() {
         buffer << file.rdbuf();
         response.body = buffer.str();
         file.close();
+        std::cout << "✅ Dashboard served successfully (" << response.body.length() << " bytes)" << std::endl;
     } else {
-        // Fallback if file cannot be read
-        response.body = "<html><body><h1>DDS System Dashboard</h1><p>Error: Could not load dashboard.html</p></body></html>";
+        // Enhanced error handling with detailed logging
+        std::cerr << "❌ Error: Could not open dashboard.html file" << std::endl;
+        std::cerr << "   Current working directory: ";
+        system("pwd");
+        response.status_code = 500;
+        response.body = "<html><body><h1>DDS System Dashboard</h1><p>Error: Could not load dashboard.html</p><p>Please check server logs for details.</p></body></html>";
     }
     
     return response;
