@@ -1,5 +1,7 @@
 #include "../../include/web/web_server.h"
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
 namespace dds {
 namespace web {
@@ -166,7 +168,19 @@ HttpResponse WebServer::serve_dashboard() {
     HttpResponse response;
     response.status_code = 200;
     response.headers["Content-Type"] = "text/html";
-    response.body = "<html><body><h1>DDS System Dashboard</h1><p>Web interface coming soon!</p></body></html>";
+    
+    // Read the dashboard HTML file
+    std::ifstream file("dashboard.html");
+    if (file.is_open()) {
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        response.body = buffer.str();
+        file.close();
+    } else {
+        // Fallback if file cannot be read
+        response.body = "<html><body><h1>DDS System Dashboard</h1><p>Error: Could not load dashboard.html</p></body></html>";
+    }
+    
     return response;
 }
 

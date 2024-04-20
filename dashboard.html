@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DDS System Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f0f0f0; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .card { background: white; padding: 20px; margin: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin: 5px; }
+        .button:hover { background: #0056b3; }
+        .status { color: #28a745; font-weight: bold; }
+        .metric { display: flex; justify-content: space-between; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>DDS System - Distributed Data Science Platform</h1>
+            <p>Real-time dashboard for monitoring and control</p>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <h2>System Status</h2>
+                <div class="status">Online</div>
+                <div class="metric"><span>CPU Usage:</span><span id="cpu">25.5%</span></div>
+                <div class="metric"><span>Memory Usage:</span><span id="memory">45.2%</span></div>
+                <div class="metric"><span>Active Jobs:</span><span id="jobs">2</span></div>
+            </div>
+            
+            <div class="card">
+                <h2>Quick Actions</h2>
+                <button class="button" onclick="submitJob()">Submit Job</button>
+                <button class="button" onclick="listJobs()">List Jobs</button>
+                <button class="button" onclick="listHDFS()">List HDFS</button>
+                <button class="button" onclick="trainModel()">Train Model</button>
+            </div>
+            
+            <div class="card">
+                <h2>HDFS Storage</h2>
+                <div class="status">Connected</div>
+                <div class="metric"><span>Files:</span><span id="files">2</span></div>
+                <div class="metric"><span>Size:</span><span id="size">3.7 KB</span></div>
+            </div>
+            
+            <div class="card">
+                <h2>ML Algorithms</h2>
+                <div class="metric"><span>Neural Networks:</span><span>Available</span></div>
+                <div class="metric"><span>Random Forest:</span><span>Available</span></div>
+                <div class="metric"><span>PCA:</span><span>Available</span></div>
+                <div class="metric"><span>SVM:</span><span>Available</span></div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>API Endpoints</h2>
+            <div>GET /api/status - System status</div>
+            <div>GET /api/jobs - List all jobs</div>
+            <div>POST /api/jobs/submit - Submit new job</div>
+            <div>GET /api/hdfs/list - List HDFS files</div>
+            <div>POST /api/algorithms/train - Train model</div>
+        </div>
+    </div>
+    
+    <script>
+        function submitJob() {
+            fetch('/api/jobs/submit', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => alert('Job submitted: ' + JSON.stringify(data)))
+                .catch(e => console.error(e));
+        }
+        
+        function listJobs() {
+            fetch('/api/jobs')
+                .then(r => r.json())
+                .then(data => alert('Jobs: ' + JSON.stringify(data)))
+                .catch(e => console.error(e));
+        }
+        
+        function listHDFS() {
+            fetch('/api/hdfs/list')
+                .then(r => r.json())
+                .then(data => console.log('HDFS:', data))
+                .catch(e => console.error(e));
+        }
+        
+        function trainModel() {
+            fetch('/api/algorithms/train', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => alert('Training: ' + JSON.stringify(data)))
+                .catch(e => console.error(e));
+        }
+        
+        // Auto-refresh
+        setInterval(() => {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => console.log('Status:', data))
+                .catch(e => console.error(e));
+        }, 30000);
+    </script>
+</body>
+</html> 
