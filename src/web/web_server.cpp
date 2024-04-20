@@ -7,6 +7,7 @@
 #include <mutex>
 #include <algorithm>
 #include <vector>
+#include <regex>
 
 namespace dds {
 namespace web {
@@ -214,6 +215,14 @@ HttpResponse WebServer::serve_dashboard() {
         buffer << file.rdbuf();
         response.body = buffer.str();
         file.close();
+        
+        // Optimize HTML content
+        response.body = optimize_html_content(response.body);
+        
+        // Add compression headers if supported
+        response.headers["Vary"] = "Accept-Encoding";
+        response.headers["Content-Encoding"] = "gzip";
+        
         std::cout << "✅ Dashboard served successfully (" << response.body.length() << " bytes)" << std::endl;
     } else {
         // Enhanced error handling with detailed logging
@@ -292,6 +301,30 @@ bool WebServer::check_rate_limit(const std::string& client_ip) {
     return true;
 }
 
+std::string WebServer::optimize_html_content(const std::string& html) {
+    std::string optimized = html;
+    
+    // Remove unnecessary whitespace and comments
+    std::regex whitespace_regex("\\s+");
+    optimized = std::regex_replace(optimized, whitespace_regex, " ");
+    
+    // Remove HTML comments
+    std::regex comment_regex("<!--.*?-->");
+    optimized = std::regex_replace(optimized, comment_regex, "");
+    
+    // Remove empty lines
+    std::regex empty_line_regex("\\n\\s*\\n");
+    optimized = std::regex_replace(optimized, empty_line_regex, "\n");
+    
+    // Trim leading/trailing whitespace
+    optimized = std::regex_replace(optimized, std::regex("^\\s+|\\s+$"), "");
+    
+    std::cout << "📦 HTML optimized: " << html.length() << " -> " << optimized.length() << " bytes (" 
+              << (100 - (optimized.length() * 100 / html.length())) << "% reduction)" << std::endl;
+    
+    return optimized;
+}
+
 // ApiEndpoints implementation
 ApiEndpoints::ApiEndpoints(std::shared_ptr<WebServer> server, 
                           std::shared_ptr<dds::storage::HadoopStorage> hadoop_storage)
@@ -351,6 +384,8 @@ HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
     response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
     response.headers["X-Content-Type-Options"] = "nosniff";
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    response.headers["Vary"] = "Accept-Encoding";
     response.body = "{\"job_id\": \"stub_job_123\", \"status\": \"submitted\"}";
     
     auto end_time = std::chrono::high_resolution_clock::now();
