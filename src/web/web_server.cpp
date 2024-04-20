@@ -15,6 +15,8 @@
 #include <atomic>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <future>
+#include <condition_variable>
 
 namespace dds {
 namespace web {
@@ -22,7 +24,13 @@ namespace web {
 WebServer::WebServer(int port, const std::string& host) 
     : port_(port), host_(host), running_(false), rate_limit_window_(60), max_requests_per_minute_(100), 
       total_requests_(0), successful_requests_(0), failed_requests_(0), max_connections_(100), 
-      active_connections_(0), connection_timeout_(30) {
+      active_connections_(0), connection_timeout_(30), thread_pool_size_(8), shutdown_thread_pool_(false) {
+    
+    // Initialize thread pool
+    for (int i = 0; i < thread_pool_size_; ++i) {
+        worker_threads_.emplace_back(&WebServer::worker_thread_function, this);
+    }
+    std::cout << "🔧 Thread pool initialized with " << thread_pool_size_ << " workers" << std::endl;
 }
 
 WebServer::~WebServer() {
@@ -45,6 +53,18 @@ bool WebServer::start() {
 
 void WebServer::stop() {
     running_ = false;
+    
+    // Shutdown thread pool
+    shutdown_thread_pool_ = true;
+    thread_pool_cv_.notify_all();
+    
+    // Wait for all worker threads to finish
+    for (auto& thread : worker_threads_) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+    
     print_analytics();
     std::cout << "Web server stopped" << std::endl;
 }
@@ -410,6 +430,8 @@ void WebServer::print_analytics() {
     std::cout << "   Rate Limited: " << (total_requests_ - successful_requests_ - failed_requests_) << std::endl;
     std::cout << "   Max Concurrent Connections: " << max_connections_ << std::endl;
     std::cout << "   Connection Pool Status: " << connection_pool_.size() << " available" << std::endl;
+    std::cout << "   Thread Pool Size: " << thread_pool_size_ << " workers" << std::endl;
+    std::cout << "   Pending Tasks: " << task_queue_.size() << std::endl;
 }
 
 bool WebServer::acquire_connection() {
@@ -445,6 +467,122 @@ void WebServer::manage_connection_pool() {
         
         std::cout << "🔄 Connection pool cleaned up. Available: " << connection_pool_.size() << std::endl;
     }
+}
+
+void WebServer::worker_thread_function() {
+    while (!shutdown_thread_pool_) {
+        std::function<void()> task;
+        
+        {
+            std::unique_lock<std::mutex> lock(thread_pool_mutex_);
+            thread_pool_cv_.wait(lock, [this] { 
+                return !task_queue_.empty() || shutdown_thread_pool_; 
+            });
+            
+            if (shutdown_thread_pool_ && task_queue_.empty()) {
+                break;
+            }
+            
+            if (!task_queue_.empty()) {
+                task = std::move(task_queue_.front());
+                task_queue_.pop();
+            }
+        }
+        
+        if (task) {
+            try {
+                task();
+            } catch (const std::exception& e) {
+                std::cerr << "❌ Worker thread error: " << e.what() << std::endl;
+            }
+        }
+    }
+}
+
+void WebServer::submit_task(std::function<void()> task) {
+    {
+        std::lock_guard<std::mutex> lock(thread_pool_mutex_);
+        task_queue_.push(std::move(task));
+    }
+    thread_pool_cv_.notify_one();
+}
+
+std::future<HttpResponse> WebServer::handle_request_async(const HttpRequest& req) {
+    auto promise = std::make_shared<std::promise<HttpResponse>>();
+    auto future = promise->get_future();
+    
+    submit_task([this, req, promise]() {
+        try {
+            auto response = handle_request_sync(req);
+            promise->set_value(response);
+        } catch (const std::exception& e) {
+            HttpResponse error_response;
+            error_response.status_code = 500;
+            error_response.headers["Content-Type"] = "application/json";
+            error_response.body = "{\"error\": \"Internal server error: " + std::string(e.what()) + "\"}";
+            promise->set_value(error_response);
+        }
+    });
+    
+    return future;
+}
+
+HttpResponse WebServer::handle_request_sync(const HttpRequest& req) {
+    // Enhanced synchronous request handling with better routing
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Log incoming request
+    log_request(req, "request");
+    
+    HttpResponse response;
+    
+    try {
+        // Route the request based on path and method
+        if (req.path == "/" || req.path == "/dashboard") {
+            response = serve_dashboard();
+        } else if (req.path == "/api/status") {
+            response = handle_status(req);
+        } else if (req.path == "/api/jobs" && req.method == "GET") {
+            response = handle_jobs_list(req);
+        } else if (req.path == "/api/jobs" && req.method == "POST") {
+            response = handle_job_submit(req);
+        } else if (req.path.find("/api/jobs/") == 0 && req.method == "GET") {
+            response = handle_job_status(req);
+        } else if (req.path == "/api/hdfs/list") {
+            response = handle_hdfs_list(req);
+        } else if (req.path == "/api/cluster/info") {
+            response = handle_cluster_info(req);
+        } else {
+            // 404 Not Found
+            response.status_code = 404;
+            response.headers["Content-Type"] = "application/json";
+            response.body = "{\"error\": \"Endpoint not found\", \"path\": \"" + req.path + "\"}";
+        }
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        
+        // Log response
+        log_response(response, duration);
+        
+        // Update counters
+        if (response.status_code < 400) {
+            successful_requests_++;
+        } else {
+            failed_requests_++;
+        }
+        total_requests_++;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Request handling error: " << e.what() << std::endl;
+        response.status_code = 500;
+        response.headers["Content-Type"] = "application/json";
+        response.body = "{\"error\": \"Internal server error\"}";
+        failed_requests_++;
+        total_requests_++;
+    }
+    
+    return response;
 }
 
 // ApiEndpoints implementation
