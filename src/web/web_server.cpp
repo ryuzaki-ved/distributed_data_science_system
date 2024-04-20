@@ -64,6 +64,12 @@ HttpResponse WebServer::handle_status(const HttpRequest& req) {
     HttpResponse response;
     response.status_code = 200;
     response.headers["Content-Type"] = "application/json";
+    response.headers["Access-Control-Allow-Origin"] = "*";
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+    response.headers["X-Content-Type-Options"] = "nosniff";
+    response.headers["X-Frame-Options"] = "DENY";
+    response.headers["X-XSS-Protection"] = "1; mode=block";
     response.body = "{\"status\": \"running\", \"version\": \"1.0.0\"}";
     
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -177,7 +183,13 @@ HttpResponse WebServer::serve_dashboard() {
     
     HttpResponse response;
     response.status_code = 200;
-    response.headers["Content-Type"] = "text/html";
+    response.headers["Content-Type"] = "text/html; charset=utf-8";
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    response.headers["Pragma"] = "no-cache";
+    response.headers["Expires"] = "0";
+    response.headers["X-Content-Type-Options"] = "nosniff";
+    response.headers["X-Frame-Options"] = "SAMEORIGIN";
+    response.headers["X-XSS-Protection"] = "1; mode=block";
     
     // Read the dashboard HTML file
     std::ifstream file("dashboard.html");
@@ -264,6 +276,9 @@ HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
     if (req.method != "POST") {
         response.status_code = 405;
         response.headers["Content-Type"] = "application/json";
+        response.headers["Access-Control-Allow-Origin"] = "*";
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
         response.body = "{\"error\": \"Method not allowed\", \"allowed_methods\": [\"POST\"]}";
         return response;
     }
@@ -273,6 +288,7 @@ HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
     if (content_type == req.headers.end() || content_type->second.find("application/json") == std::string::npos) {
         response.status_code = 400;
         response.headers["Content-Type"] = "application/json";
+        response.headers["Access-Control-Allow-Origin"] = "*";
         response.body = "{\"error\": \"Invalid content type. Expected application/json\"}";
         return response;
     }
@@ -281,6 +297,7 @@ HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
     if (req.body.empty()) {
         response.status_code = 400;
         response.headers["Content-Type"] = "application/json";
+        response.headers["Access-Control-Allow-Origin"] = "*";
         response.body = "{\"error\": \"Request body is required\"}";
         return response;
     }
@@ -288,6 +305,10 @@ HttpResponse ApiEndpoints::submit_job(const HttpRequest& req) {
     HttpResponse response;
     response.status_code = 200;
     response.headers["Content-Type"] = "application/json";
+    response.headers["Access-Control-Allow-Origin"] = "*";
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+    response.headers["X-Content-Type-Options"] = "nosniff";
     response.body = "{\"job_id\": \"stub_job_123\", \"status\": \"submitted\"}";
     
     auto end_time = std::chrono::high_resolution_clock::now();
