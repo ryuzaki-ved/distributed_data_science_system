@@ -3,12 +3,16 @@
 #include <fstream>
 #include <sstream>
 #include <chrono>
+#include <map>
+#include <mutex>
+#include <algorithm>
+#include <vector>
 
 namespace dds {
 namespace web {
 
 WebServer::WebServer(int port, const std::string& host) 
-    : port_(port), host_(host), running_(false) {
+    : port_(port), host_(host), running_(false), rate_limit_window_(60), max_requests_per_minute_(100) {
 }
 
 WebServer::~WebServer() {
@@ -60,6 +64,18 @@ void WebServer::set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> 
 
 HttpResponse WebServer::handle_status(const HttpRequest& req) {
     auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Rate limiting check
+    std::string client_ip = req.headers.count("X-Forwarded-For") ? req.headers.at("X-Forwarded-For") : "127.0.0.1";
+    if (!check_rate_limit(client_ip)) {
+        HttpResponse response;
+        response.status_code = 429;
+        response.headers["Content-Type"] = "application/json";
+        response.headers["Retry-After"] = "60";
+        response.body = "{\"error\": \"Rate limit exceeded. Please try again later.\"}";
+        std::cout << "🚫 Rate limit exceeded for client: " << client_ip << std::endl;
+        return response;
+    }
     
     HttpResponse response;
     response.status_code = 200;
@@ -248,6 +264,32 @@ std::string WebServer::generate_json_response(const std::map<std::string, std::s
 std::string WebServer::generate_error_response(const std::string& error, int status_code) {
     // Stub implementation
     return "{\"error\": \"" + error + "\"}";
+}
+
+bool WebServer::check_rate_limit(const std::string& client_ip) {
+    std::lock_guard<std::mutex> lock(rate_limit_mutex_);
+    
+    auto now = std::chrono::steady_clock::now();
+    auto window_start = now - std::chrono::seconds(rate_limit_window_);
+    
+    // Clean old entries
+    auto& requests = rate_limit_requests_[client_ip];
+    requests.erase(
+        std::remove_if(requests.begin(), requests.end(),
+            [window_start](const auto& timestamp) {
+                return timestamp < window_start;
+            }),
+        requests.end()
+    );
+    
+    // Check if limit exceeded
+    if (requests.size() >= max_requests_per_minute_) {
+        return false;
+    }
+    
+    // Add current request
+    requests.push_back(now);
+    return true;
 }
 
 // ApiEndpoints implementation
