@@ -8,12 +8,15 @@
 #include <algorithm>
 #include <vector>
 #include <regex>
+#include <ctime>
+#include <iomanip>
 
 namespace dds {
 namespace web {
 
 WebServer::WebServer(int port, const std::string& host) 
-    : port_(port), host_(host), running_(false), rate_limit_window_(60), max_requests_per_minute_(100) {
+    : port_(port), host_(host), running_(false), rate_limit_window_(60), max_requests_per_minute_(100), 
+      total_requests_(0), successful_requests_(0), failed_requests_(0) {
 }
 
 WebServer::~WebServer() {
@@ -36,6 +39,7 @@ bool WebServer::start() {
 
 void WebServer::stop() {
     running_ = false;
+    print_analytics();
     std::cout << "Web server stopped" << std::endl;
 }
 
@@ -66,6 +70,9 @@ void WebServer::set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> 
 HttpResponse WebServer::handle_status(const HttpRequest& req) {
     auto start_time = std::chrono::high_resolution_clock::now();
     
+    // Log incoming request
+    log_request(req, "status");
+    
     // Rate limiting check
     std::string client_ip = req.headers.count("X-Forwarded-For") ? req.headers.at("X-Forwarded-For") : "127.0.0.1";
     if (!check_rate_limit(client_ip)) {
@@ -75,6 +82,10 @@ HttpResponse WebServer::handle_status(const HttpRequest& req) {
         response.headers["Retry-After"] = "60";
         response.body = "{\"error\": \"Rate limit exceeded. Please try again later.\"}";
         std::cout << "🚫 Rate limit exceeded for client: " << client_ip << std::endl;
+        
+        // Log failed request
+        log_response(response, duration_cast<microseconds>(high_resolution_clock::now() - start_time));
+        failed_requests_++;
         return response;
     }
     
@@ -91,6 +102,12 @@ HttpResponse WebServer::handle_status(const HttpRequest& req) {
     
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    
+    // Log successful response
+    log_response(response, duration);
+    successful_requests_++;
+    total_requests_++;
+    
     std::cout << "📊 Status endpoint processed in " << duration.count() << " μs" << std::endl;
     
     return response;
@@ -323,6 +340,40 @@ std::string WebServer::optimize_html_content(const std::string& html) {
               << (100 - (optimized.length() * 100 / html.length())) << "% reduction)" << std::endl;
     
     return optimized;
+}
+
+void WebServer::log_request(const HttpRequest& req, const std::string& endpoint) {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto tm = *std::localtime(&time_t);
+    
+    std::string client_ip = req.headers.count("X-Forwarded-For") ? req.headers.at("X-Forwarded-For") : "127.0.0.1";
+    std::string user_agent = req.headers.count("User-Agent") ? req.headers.at("User-Agent") : "Unknown";
+    
+    std::cout << "📝 [" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "] "
+              << req.method << " " << req.path << " (" << endpoint << ") "
+              << "from " << client_ip << " - " << user_agent << std::endl;
+}
+
+void WebServer::log_response(const HttpResponse& response, const std::chrono::microseconds& duration) {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto tm = *std::localtime(&time_t);
+    
+    std::string status_color = (response.status_code >= 200 && response.status_code < 300) ? "✅" : "❌";
+    
+    std::cout << "📤 [" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "] "
+              << status_color << " " << response.status_code << " "
+              << response.body.length() << " bytes in " << duration.count() << " μs" << std::endl;
+}
+
+void WebServer::print_analytics() {
+    std::cout << "\n📊 Web Server Analytics:" << std::endl;
+    std::cout << "   Total Requests: " << total_requests_ << std::endl;
+    std::cout << "   Successful: " << successful_requests_ << std::endl;
+    std::cout << "   Failed: " << failed_requests_ << std::endl;
+    std::cout << "   Success Rate: " << (total_requests_ > 0 ? (successful_requests_ * 100.0 / total_requests_) : 0) << "%" << std::endl;
+    std::cout << "   Rate Limited: " << (total_requests_ - successful_requests_ - failed_requests_) << std::endl;
 }
 
 // ApiEndpoints implementation
