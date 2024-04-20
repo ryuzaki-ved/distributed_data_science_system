@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <future>
 #include <condition_variable>
+#include <unordered_map>
 
 namespace dds {
 namespace web {
@@ -24,13 +25,15 @@ namespace web {
 WebServer::WebServer(int port, const std::string& host) 
     : port_(port), host_(host), running_(false), rate_limit_window_(60), max_requests_per_minute_(100), 
       total_requests_(0), successful_requests_(0), failed_requests_(0), max_connections_(100), 
-      active_connections_(0), connection_timeout_(30), thread_pool_size_(8), shutdown_thread_pool_(false) {
+      active_connections_(0), connection_timeout_(30), thread_pool_size_(8), shutdown_thread_pool_(false),
+      cache_enabled_(true), cache_ttl_(300), max_cache_size_(1000) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
         worker_threads_.emplace_back(&WebServer::worker_thread_function, this);
     }
     std::cout << "🔧 Thread pool initialized with " << thread_pool_size_ << " workers" << std::endl;
+    std::cout << "💾 Response cache enabled (TTL: " << cache_ttl_ << "s, Max: " << max_cache_size_ << " entries)" << std::endl;
 }
 
 WebServer::~WebServer() {
@@ -99,6 +102,14 @@ HttpResponse WebServer::handle_status(const HttpRequest& req) {
     // Log incoming request
     log_request(req, "status");
     
+    // Check cache first
+    std::string cache_key = "status:" + req.method + ":" + req.path;
+    auto cached_response = get_cached_response(cache_key);
+    if (cached_response.has_value()) {
+        std::cout << "💾 Cache hit for status endpoint" << std::endl;
+        return cached_response.value();
+    }
+    
     // Rate limiting check
     std::string client_ip = req.headers.count("X-Forwarded-For") ? req.headers.at("X-Forwarded-For") : "127.0.0.1";
     if (!check_rate_limit(client_ip)) {
@@ -124,7 +135,12 @@ HttpResponse WebServer::handle_status(const HttpRequest& req) {
     response.headers["X-Content-Type-Options"] = "nosniff";
     response.headers["X-Frame-Options"] = "DENY";
     response.headers["X-XSS-Protection"] = "1; mode=block";
-    response.body = "{\"status\": \"running\", \"version\": \"1.0.0\"}";
+    response.headers["Cache-Control"] = "public, max-age=60";
+    response.headers["ETag"] = "\"status-v1.0.0\"";
+    response.body = "{\"status\": \"running\", \"version\": \"1.0.0\", \"timestamp\": \"" + get_current_timestamp() + "\"}";
+    
+    // Cache the response
+    cache_response(cache_key, response);
     
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
@@ -432,6 +448,8 @@ void WebServer::print_analytics() {
     std::cout << "   Connection Pool Status: " << connection_pool_.size() << " available" << std::endl;
     std::cout << "   Thread Pool Size: " << thread_pool_size_ << " workers" << std::endl;
     std::cout << "   Pending Tasks: " << task_queue_.size() << std::endl;
+    std::cout << "   Response Cache: " << response_cache_.size() << "/" << max_cache_size_ << " entries" << std::endl;
+    std::cout << "   Cache TTL: " << cache_ttl_ << " seconds" << std::endl;
 }
 
 bool WebServer::acquire_connection() {
@@ -583,6 +601,90 @@ HttpResponse WebServer::handle_request_sync(const HttpRequest& req) {
     }
     
     return response;
+}
+
+std::optional<HttpResponse> WebServer::get_cached_response(const std::string& cache_key) {
+    if (!cache_enabled_) return std::nullopt;
+    
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    auto it = response_cache_.find(cache_key);
+    if (it != response_cache_.end()) {
+        auto& cache_entry = it->second;
+        auto now = std::chrono::steady_clock::now();
+        
+        if ((now - cache_entry.timestamp) < std::chrono::seconds(cache_ttl_)) {
+            std::cout << "💾 Cache hit for key: " << cache_key << std::endl;
+            return cache_entry.response;
+        } else {
+            // Expired entry, remove it
+            response_cache_.erase(it);
+            std::cout << "🗑️ Cache entry expired for key: " << cache_key << std::endl;
+        }
+    }
+    
+    return std::nullopt;
+}
+
+void WebServer::cache_response(const std::string& cache_key, const HttpResponse& response) {
+    if (!cache_enabled_) return;
+    
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    // Check if cache is full and remove oldest entries
+    if (response_cache_.size() >= max_cache_size_) {
+        auto oldest = response_cache_.begin();
+        for (auto it = response_cache_.begin(); it != response_cache_.end(); ++it) {
+            if (it->second.timestamp < oldest->second.timestamp) {
+                oldest = it;
+            }
+        }
+        response_cache_.erase(oldest);
+        std::cout << "🗑️ Removed oldest cache entry due to size limit" << std::endl;
+    }
+    
+    CacheEntry entry;
+    entry.response = response;
+    entry.timestamp = std::chrono::steady_clock::now();
+    response_cache_[cache_key] = entry;
+    
+    std::cout << "💾 Cached response for key: " << cache_key << " (cache size: " << response_cache_.size() << ")" << std::endl;
+}
+
+void WebServer::clear_cache() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    response_cache_.clear();
+    std::cout << "🧹 Response cache cleared" << std::endl;
+}
+
+std::string WebServer::get_current_timestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    auto tm = *std::localtime(&time_t);
+    
+    std::stringstream ss;
+    ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+    return ss.str();
+}
+
+void WebServer::cleanup_expired_cache() {
+    if (!cache_enabled_) return;
+    
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    auto now = std::chrono::steady_clock::now();
+    
+    size_t removed_count = 0;
+    for (auto it = response_cache_.begin(); it != response_cache_.end();) {
+        if ((now - it->second.timestamp) >= std::chrono::seconds(cache_ttl_)) {
+            it = response_cache_.erase(it);
+            removed_count++;
+        } else {
+            ++it;
+        }
+    }
+    
+    if (removed_count > 0) {
+        std::cout << "🧹 Cleaned up " << removed_count << " expired cache entries" << std::endl;
+    }
 }
 
 // ApiEndpoints implementation
