@@ -18,6 +18,7 @@
 #include <future>
 #include <condition_variable>
 #include <unordered_map>
+#include <zlib.h>
 
 namespace dds {
 namespace web {
@@ -26,7 +27,8 @@ WebServer::WebServer(int port, const std::string& host)
     : port_(port), host_(host), running_(false), rate_limit_window_(60), max_requests_per_minute_(100), 
       total_requests_(0), successful_requests_(0), failed_requests_(0), max_connections_(100), 
       active_connections_(0), connection_timeout_(30), thread_pool_size_(8), shutdown_thread_pool_(false),
-      cache_enabled_(true), cache_ttl_(300), max_cache_size_(1000) {
+      cache_enabled_(true), cache_ttl_(300), max_cache_size_(1000), compression_enabled_(true), 
+      compression_level_(6), min_compression_size_(1024) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -34,6 +36,7 @@ WebServer::WebServer(int port, const std::string& host)
     }
     std::cout << "🔧 Thread pool initialized with " << thread_pool_size_ << " workers" << std::endl;
     std::cout << "💾 Response cache enabled (TTL: " << cache_ttl_ << "s, Max: " << max_cache_size_ << " entries)" << std::endl;
+    std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
 }
 
 WebServer::~WebServer() {
@@ -306,9 +309,16 @@ HttpResponse WebServer::serve_dashboard() {
         // Optimize HTML content
         response.body = optimize_html_content(response.body);
         
-        // Add compression headers if supported
-        response.headers["Vary"] = "Accept-Encoding";
-        response.headers["Content-Encoding"] = "gzip";
+        // Apply compression if enabled and content is large enough
+        if (compression_enabled_ && response.body.length() >= min_compression_size_) {
+            auto compressed = compress_content(response.body);
+            if (compressed.has_value()) {
+                response.body = compressed.value();
+                response.headers["Content-Encoding"] = "gzip";
+                response.headers["Vary"] = "Accept-Encoding";
+                std::cout << "🗜️ Content compressed: " << response.body.length() << " bytes" << std::endl;
+            }
+        }
         
         std::cout << "✅ Dashboard served successfully (" << response.body.length() << " bytes)" << std::endl;
     } else {
@@ -450,6 +460,8 @@ void WebServer::print_analytics() {
     std::cout << "   Pending Tasks: " << task_queue_.size() << std::endl;
     std::cout << "   Response Cache: " << response_cache_.size() << "/" << max_cache_size_ << " entries" << std::endl;
     std::cout << "   Cache TTL: " << cache_ttl_ << " seconds" << std::endl;
+    std::cout << "   Compression: " << (compression_enabled_ ? "Enabled" : "Disabled") << " (level: " << compression_level_ << ")" << std::endl;
+    std::cout << "   Min Compression Size: " << min_compression_size_ << " bytes" << std::endl;
 }
 
 bool WebServer::acquire_connection() {
@@ -684,6 +696,110 @@ void WebServer::cleanup_expired_cache() {
     
     if (removed_count > 0) {
         std::cout << "🧹 Cleaned up " << removed_count << " expired cache entries" << std::endl;
+    }
+}
+
+std::optional<std::string> WebServer::compress_content(const std::string& content) {
+    if (!compression_enabled_ || content.empty()) {
+        return std::nullopt;
+    }
+    
+    // Calculate buffer size for compressed data
+    uLong compressed_size = compressBound(content.length());
+    std::vector<Bytef> compressed_buffer(compressed_size);
+    
+    // Compress the content
+    uLong actual_compressed_size = compressed_size;
+    int result = compress2(compressed_buffer.data(), &actual_compressed_size,
+                          reinterpret_cast<const Bytef*>(content.c_str()), content.length(),
+                          compression_level_);
+    
+    if (result == Z_OK && actual_compressed_size < content.length()) {
+        // Only use compression if it actually reduces size
+        std::string compressed_content(reinterpret_cast<char*>(compressed_buffer.data()), actual_compressed_size);
+        
+        double compression_ratio = (1.0 - (double)actual_compressed_size / content.length()) * 100.0;
+        std::cout << "🗜️ Compression successful: " << content.length() << " -> " 
+                  << actual_compressed_size << " bytes (" << std::fixed << std::setprecision(1) 
+                  << compression_ratio << "% reduction)" << std::endl;
+        
+        return compressed_content;
+    } else {
+        std::cout << "⚠️ Compression not beneficial or failed, using original content" << std::endl;
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string> WebServer::decompress_content(const std::string& compressed_content) {
+    if (compressed_content.empty()) {
+        return std::nullopt;
+    }
+    
+    // Estimate decompressed size (may need adjustment)
+    uLong decompressed_size = compressed_content.length() * 4; // Conservative estimate
+    std::vector<Bytef> decompressed_buffer(decompressed_size);
+    
+    uLong actual_decompressed_size = decompressed_size;
+    int result = uncompress(decompressed_buffer.data(), &actual_decompressed_size,
+                           reinterpret_cast<const Bytef*>(compressed_content.c_str()), compressed_content.length());
+    
+    if (result == Z_OK) {
+        std::string decompressed_content(reinterpret_cast<char*>(decompressed_buffer.data()), actual_decompressed_size);
+        std::cout << "🗜️ Decompression successful: " << compressed_content.length() << " -> " 
+                  << actual_decompressed_size << " bytes" << std::endl;
+        return decompressed_content;
+    } else {
+        std::cerr << "❌ Decompression failed with error code: " << result << std::endl;
+        return std::nullopt;
+    }
+}
+
+bool WebServer::should_compress_content(const std::string& content_type, size_t content_length) {
+    if (!compression_enabled_ || content_length < min_compression_size_) {
+        return false;
+    }
+    
+    // Only compress text-based content types
+    static const std::vector<std::string> compressible_types = {
+        "text/", "application/json", "application/xml", "application/javascript", 
+        "text/css", "text/html", "text/plain", "application/xhtml+xml"
+    };
+    
+    for (const auto& type : compressible_types) {
+        if (content_type.find(type) == 0) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+void WebServer::optimize_response_headers(HttpResponse& response) {
+    // Add compression-related headers
+    if (compression_enabled_) {
+        response.headers["Vary"] = "Accept-Encoding";
+        
+        // Check if content should be compressed
+        auto content_type = response.headers.find("Content-Type");
+        if (content_type != response.headers.end() && 
+            should_compress_content(content_type->second, response.body.length())) {
+            
+            auto compressed = compress_content(response.body);
+            if (compressed.has_value()) {
+                response.body = compressed.value();
+                response.headers["Content-Encoding"] = "gzip";
+            }
+        }
+    }
+    
+    // Add performance headers
+    response.headers["X-Content-Type-Options"] = "nosniff";
+    response.headers["X-Frame-Options"] = "SAMEORIGIN";
+    response.headers["X-XSS-Protection"] = "1; mode=block";
+    
+    // Add cache headers for appropriate content
+    if (response.status_code == 200) {
+        response.headers["Cache-Control"] = "public, max-age=300";
     }
 }
 
