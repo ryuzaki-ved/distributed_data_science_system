@@ -10,13 +10,19 @@
 #include <regex>
 #include <ctime>
 #include <iomanip>
+#include <queue>
+#include <thread>
+#include <atomic>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace dds {
 namespace web {
 
 WebServer::WebServer(int port, const std::string& host) 
     : port_(port), host_(host), running_(false), rate_limit_window_(60), max_requests_per_minute_(100), 
-      total_requests_(0), successful_requests_(0), failed_requests_(0) {
+      total_requests_(0), successful_requests_(0), failed_requests_(0), max_connections_(100), 
+      active_connections_(0), connection_timeout_(30) {
 }
 
 WebServer::~WebServer() {
@@ -191,8 +197,36 @@ void WebServer::run_server(int serverSocket) {
 }
 
 void WebServer::handle_client(int clientSocket) {
-    // Stub implementation
-    std::cout << "Client connected" << std::endl;
+    // Acquire connection slot
+    if (!acquire_connection()) {
+        std::cout << "❌ Connection rejected - limit exceeded" << std::endl;
+        close(clientSocket);
+        return;
+    }
+    
+    try {
+        // Set socket timeout
+        struct timeval timeout;
+        timeout.tv_sec = connection_timeout_;
+        timeout.tv_usec = 0;
+        setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+        
+        std::cout << "🔗 Client connection established (socket: " << clientSocket << ")" << std::endl;
+        
+        // Handle client request here
+        // This is a stub implementation - actual request handling would go here
+        
+        // Simulate request processing
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error handling client: " << e.what() << std::endl;
+    }
+    
+    // Release connection slot
+    release_connection();
+    close(clientSocket);
+    std::cout << "🔓 Client connection closed (socket: " << clientSocket << ")" << std::endl;
 }
 
 HttpRequest WebServer::parse_request(const std::string& request) {
@@ -374,6 +408,43 @@ void WebServer::print_analytics() {
     std::cout << "   Failed: " << failed_requests_ << std::endl;
     std::cout << "   Success Rate: " << (total_requests_ > 0 ? (successful_requests_ * 100.0 / total_requests_) : 0) << "%" << std::endl;
     std::cout << "   Rate Limited: " << (total_requests_ - successful_requests_ - failed_requests_) << std::endl;
+    std::cout << "   Max Concurrent Connections: " << max_connections_ << std::endl;
+    std::cout << "   Connection Pool Status: " << connection_pool_.size() << " available" << std::endl;
+}
+
+bool WebServer::acquire_connection() {
+    if (active_connections_.load() >= max_connections_) {
+        std::cout << "🚫 Connection limit reached (" << active_connections_.load() << "/" << max_connections_ << ")" << std::endl;
+        return false;
+    }
+    
+    active_connections_++;
+    std::cout << "🔗 Connection acquired (" << active_connections_.load() << "/" << max_connections_ << ")" << std::endl;
+    return true;
+}
+
+void WebServer::release_connection() {
+    if (active_connections_.load() > 0) {
+        active_connections_--;
+        std::cout << "🔓 Connection released (" << active_connections_.load() << "/" << max_connections_ << ")" << std::endl;
+    }
+}
+
+void WebServer::manage_connection_pool() {
+    while (running_) {
+        std::this_thread::sleep_for(std::chrono::seconds(connection_timeout_));
+        
+        // Clean up expired connections
+        auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(connection_pool_mutex_);
+        
+        while (!connection_pool_.empty() && 
+               (now - connection_pool_.front().timestamp) > std::chrono::seconds(connection_timeout_)) {
+            connection_pool_.pop();
+        }
+        
+        std::cout << "🔄 Connection pool cleaned up. Available: " << connection_pool_.size() << std::endl;
+    }
 }
 
 // ApiEndpoints implementation
