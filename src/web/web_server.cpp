@@ -36,7 +36,10 @@ WebServer::WebServer(int port, const std::string& host)
       max_request_size_(10485760), max_header_size_(8192), routing_enabled_(true), 
       middleware_enabled_(true), route_cache_enabled_(true), monitoring_enabled_(true), 
       health_check_interval_(30), last_health_check_(std::chrono::steady_clock::now()),
-      start_time_(std::chrono::steady_clock::now()), cache_hits_(0), cache_misses_(0) {
+      start_time_(std::chrono::steady_clock::now()), cache_hits_(0), cache_misses_(0),
+      adaptive_compression_enabled_(true), bandwidth_throttling_enabled_(true), 
+      max_bandwidth_per_client_(10485760), total_bytes_sent_(0), total_bytes_compressed_(0), 
+      average_compression_ratio_(0.0) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -45,12 +48,17 @@ WebServer::WebServer(int port, const std::string& host)
     std::cout << "🔧 Thread pool initialized with " << thread_pool_size_ << " workers" << std::endl;
     std::cout << "💾 Response cache enabled (TTL: " << cache_ttl_ << "s, Max: " << max_cache_size_ << " entries)" << std::endl;
     std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
+    std::cout << "🔄 Adaptive compression: " << (adaptive_compression_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "🚫 Bandwidth throttling: " << (bandwidth_throttling_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_bandwidth_per_client_ / 1024 / 1024 << " MB/min)" << std::endl;
     std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
     // Initialize default routes
     initialize_default_routes();
+    
+    // Pre-compress static content
+    pre_compress_static_content();
 }
 
 WebServer::~WebServer() {
@@ -180,6 +188,14 @@ void WebServer::initialize_default_routes() {
     
     add_get_route("/api/monitoring/performance", [this](const HttpRequest& req, HttpResponse& res) {
         return handle_performance_metrics(req, res);
+    });
+    
+    add_get_route("/api/bandwidth/status", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_bandwidth_status(req, res);
+    });
+    
+    add_get_route("/api/bandwidth/optimization", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_bandwidth_optimization(req, res);
     });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
@@ -828,7 +844,15 @@ void WebServer::print_analytics() {
     std::cout << "   Response Cache: " << response_cache_.size() << "/" << max_cache_size_ << " entries" << std::endl;
     std::cout << "   Cache TTL: " << cache_ttl_ << " seconds" << std::endl;
     std::cout << "   Compression: " << (compression_enabled_ ? "Enabled" : "Disabled") << " (level: " << compression_level_ << ")" << std::endl;
+    std::cout << "   Adaptive Compression: " << (adaptive_compression_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Min Compression Size: " << min_compression_size_ << " bytes" << std::endl;
+    std::cout << "   Bandwidth Throttling: " << (bandwidth_throttling_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "   Max Bandwidth per Client: " << max_bandwidth_per_client_ / 1024 / 1024 << " MB/min" << std::endl;
+    std::cout << "   Total Bytes Sent: " << total_bytes_sent_ / 1024 / 1024 << " MB" << std::endl;
+    std::cout << "   Total Bytes Compressed: " << total_bytes_compressed_ / 1024 / 1024 << " MB" << std::endl;
+    std::cout << "   Average Compression Ratio: " << std::fixed << std::setprecision(1) << average_compression_ratio_ << "%" << std::endl;
+    std::cout << "   Pre-compressed Content: " << pre_compressed_content_.size() << " items" << std::endl;
+    std::cout << "   Active Bandwidth Clients: " << bandwidth_usage_.size() << std::endl;
     std::cout << "   Request Validation: " << (validation_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
@@ -1240,6 +1264,175 @@ void WebServer::optimize_response_headers(HttpResponse& response) {
     }
 }
 
+int WebServer::get_adaptive_compression_level(const std::string& content_type, size_t content_length) {
+    if (!adaptive_compression_enabled_) {
+        return compression_level_;
+    }
+    
+    // Higher compression for larger files
+    if (content_length > 1024 * 1024) { // > 1MB
+        return std::min(9, compression_level_ + 2);
+    } else if (content_length > 100 * 1024) { // > 100KB
+        return std::min(8, compression_level_ + 1);
+    }
+    
+    // Lower compression for small files to save CPU
+    if (content_length < 10 * 1024) { // < 10KB
+        return std::max(1, compression_level_ - 2);
+    }
+    
+    return compression_level_;
+}
+
+bool WebServer::should_throttle_bandwidth(const std::string& client_ip, size_t response_size) {
+    if (!bandwidth_throttling_enabled_) {
+        return false;
+    }
+    
+    std::lock_guard<std::mutex> lock(bandwidth_mutex_);
+    auto now = std::chrono::steady_clock::now();
+    
+    // Clean up old entries (older than 1 minute)
+    auto it = bandwidth_usage_.begin();
+    while (it != bandwidth_usage_.end()) {
+        if (now - it->second.second > std::chrono::minutes(1)) {
+            it = bandwidth_usage_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    // Check current usage
+    auto usage_it = bandwidth_usage_.find(client_ip);
+    if (usage_it != bandwidth_usage_.end()) {
+        size_t current_usage = usage_it->second.first;
+        if (current_usage + response_size > max_bandwidth_per_client_) {
+            std::cout << "🚫 Bandwidth throttling for client " << client_ip 
+                      << " (usage: " << current_usage << " + " << response_size 
+                      << " > " << max_bandwidth_per_client_ << ")" << std::endl;
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+void WebServer::update_bandwidth_usage(const std::string& client_ip, size_t bytes_sent) {
+    if (!bandwidth_throttling_enabled_) {
+        return;
+    }
+    
+    std::lock_guard<std::mutex> lock(bandwidth_mutex_);
+    auto now = std::chrono::steady_clock::now();
+    
+    auto& usage = bandwidth_usage_[client_ip];
+    usage.first += bytes_sent;
+    usage.second = now;
+    
+    total_bytes_sent_ += bytes_sent;
+}
+
+double WebServer::get_bandwidth_usage_rate(const std::string& client_ip) {
+    std::lock_guard<std::mutex> lock(bandwidth_mutex_);
+    
+    auto it = bandwidth_usage_.find(client_ip);
+    if (it == bandwidth_usage_.end()) {
+        return 0.0;
+    }
+    
+    auto now = std::chrono::steady_clock::now();
+    auto time_diff = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.second).count();
+    
+    if (time_diff == 0) {
+        return 0.0;
+    }
+    
+    return static_cast<double>(it->second.first) / time_diff; // bytes per second
+}
+
+void WebServer::pre_compress_static_content() {
+    if (!compression_enabled_) {
+        return;
+    }
+    
+    std::cout << "🗜️ Pre-compressing static content..." << std::endl;
+    
+    // Pre-compress common static content
+    std::map<std::string, std::string> static_content = {
+        {"dashboard_html", "<!DOCTYPE html><html><head><title>DDS Dashboard</title></head><body><h1>DDS Dashboard</h1></body></html>"},
+        {"api_docs", "{\"version\":\"1.0\",\"endpoints\":[\"/api/status\",\"/api/jobs\",\"/api/hdfs/list\"]}"},
+        {"health_check", "{\"status\":\"healthy\",\"timestamp\":\"" + std::to_string(std::time(nullptr)) + "\"}"}
+    };
+    
+    std::lock_guard<std::mutex> lock(pre_compressed_mutex_);
+    for (const auto& [key, content] : static_content) {
+        auto compressed = compress_content(content);
+        if (compressed.has_value()) {
+            pre_compressed_content_[key] = compressed.value();
+            std::cout << "   ✅ Pre-compressed: " << key << " (" << content.length() 
+                      << " -> " << compressed.value().length() << " bytes)" << std::endl;
+        }
+    }
+}
+
+std::optional<std::string> WebServer::get_pre_compressed_content(const std::string& content_key) {
+    std::lock_guard<std::mutex> lock(pre_compressed_mutex_);
+    auto it = pre_compressed_content_.find(content_key);
+    if (it != pre_compressed_content_.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+void WebServer::cache_compressed_content(const std::string& content_key, const std::string& compressed_content) {
+    std::lock_guard<std::mutex> lock(pre_compressed_mutex_);
+    pre_compressed_content_[content_key] = compressed_content;
+}
+
+bool WebServer::supports_compression(const std::map<std::string, std::string>& headers) {
+    auto accept_encoding = headers.find("Accept-Encoding");
+    if (accept_encoding == headers.end()) {
+        return false;
+    }
+    
+    std::string encoding = accept_encoding->second;
+    return encoding.find("gzip") != std::string::npos || 
+           encoding.find("deflate") != std::string::npos ||
+           encoding.find("*") != std::string::npos;
+}
+
+std::string WebServer::get_optimal_encoding(const std::map<std::string, std::string>& headers) {
+    auto accept_encoding = headers.find("Accept-Encoding");
+    if (accept_encoding == headers.end()) {
+        return "identity";
+    }
+    
+    std::string encoding = accept_encoding->second;
+    
+    // Prefer gzip over deflate
+    if (encoding.find("gzip") != std::string::npos) {
+        return "gzip";
+    } else if (encoding.find("deflate") != std::string::npos) {
+        return "deflate";
+    }
+    
+    return "identity";
+}
+
+void WebServer::log_bandwidth_metrics(const std::string& client_ip, size_t original_size, size_t compressed_size, double compression_ratio) {
+    std::cout << "📊 Bandwidth metrics for " << client_ip << ":" << std::endl;
+    std::cout << "   Original size: " << original_size << " bytes" << std::endl;
+    std::cout << "   Compressed size: " << compressed_size << " bytes" << std::endl;
+    std::cout << "   Compression ratio: " << std::fixed << std::setprecision(1) << compression_ratio << "%" << std::endl;
+    std::cout << "   Bandwidth saved: " << (original_size - compressed_size) << " bytes" << std::endl;
+    
+    // Update global metrics
+    total_bytes_compressed_ += compressed_size;
+    if (total_bytes_sent_ > 0) {
+        average_compression_ratio_ = (static_cast<double>(total_bytes_compressed_) / total_bytes_sent_) * 100.0;
+    }
+}
+
 ValidationResult WebServer::validate_request(const HttpRequest& req) {
     ValidationResult result;
     result.is_valid = true;
@@ -1616,6 +1809,95 @@ void WebServer::update_monitoring_data(double response_time, size_t memory_usage
     if (cpu_usage_history_.size() > max_history_size) {
         cpu_usage_history_.erase(cpu_usage_history_.begin());
     }
+}
+
+HttpResponse WebServer::handle_bandwidth_status(const HttpRequest& req, HttpResponse& res) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Cache-Control"] = "no-cache";
+    
+    std::lock_guard<std::mutex> lock(bandwidth_mutex_);
+    
+    res.body = "{";
+    res.body += "\"compression_enabled\": " + std::string(compression_enabled_ ? "true" : "false") + ",";
+    res.body += "\"adaptive_compression_enabled\": " + std::string(adaptive_compression_enabled_ ? "true" : "false") + ",";
+    res.body += "\"bandwidth_throttling_enabled\": " + std::string(bandwidth_throttling_enabled_ ? "true" : "false") + ",";
+    res.body += "\"compression_level\": " + std::to_string(compression_level_) + ",";
+    res.body += "\"min_compression_size\": " + std::to_string(min_compression_size_) + ",";
+    res.body += "\"max_bandwidth_per_client\": " + std::to_string(max_bandwidth_per_client_) + ",";
+    res.body += "\"total_bytes_sent\": " + std::to_string(total_bytes_sent_) + ",";
+    res.body += "\"total_bytes_compressed\": " + std::to_string(total_bytes_compressed_) + ",";
+    res.body += "\"average_compression_ratio\": " + std::to_string(average_compression_ratio_) + ",";
+    res.body += "\"pre_compressed_content_count\": " + std::to_string(pre_compressed_content_.size()) + ",";
+    res.body += "\"active_bandwidth_clients\": " + std::to_string(bandwidth_usage_.size()) + ",";
+    
+    // Add client-specific bandwidth usage
+    res.body += "\"client_bandwidth_usage\": {";
+    bool first_client = true;
+    for (const auto& [client_ip, usage] : bandwidth_usage_) {
+        if (!first_client) res.body += ",";
+        res.body += "\"" + client_ip + "\": {";
+        res.body += "\"bytes_sent\": " + std::to_string(usage.first) + ",";
+        res.body += "\"usage_rate\": " + std::to_string(get_bandwidth_usage_rate(client_ip));
+        res.body += "}";
+        first_client = false;
+    }
+    res.body += "}";
+    
+    res.body += "}";
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    std::cout << "📊 Bandwidth status endpoint processed in " << duration.count() << " μs" << std::endl;
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_bandwidth_optimization(const HttpRequest& req, HttpResponse& res) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Cache-Control"] = "no-cache";
+    
+    // Get client IP from request headers or use default
+    std::string client_ip = "unknown";
+    auto x_forwarded_for = req.headers.find("X-Forwarded-For");
+    if (x_forwarded_for != req.headers.end()) {
+        client_ip = x_forwarded_for->second;
+    } else {
+        auto x_real_ip = req.headers.find("X-Real-IP");
+        if (x_real_ip != req.headers.end()) {
+            client_ip = x_real_ip->second;
+        }
+    }
+    
+    res.body = "{";
+    res.body += "\"client_ip\": \"" + client_ip + "\",";
+    res.body += "\"supports_compression\": " + std::string(supports_compression(req.headers) ? "true" : "false") + ",";
+    res.body += "\"optimal_encoding\": \"" + get_optimal_encoding(req.headers) + "\",";
+    res.body += "\"bandwidth_usage_rate\": " + std::to_string(get_bandwidth_usage_rate(client_ip)) + ",";
+    res.body += "\"compression_recommendations\": {";
+    res.body += "\"enable_compression\": " + std::string(compression_enabled_ ? "true" : "false") + ",";
+    res.body += "\"adaptive_level\": " + std::to_string(get_adaptive_compression_level("application/json", 1024)) + ",";
+    res.body += "\"pre_compression_available\": " + std::string(pre_compressed_content_.size() > 0 ? "true" : "false");
+    res.body += "},";
+    res.body += "\"optimization_tips\": [";
+    res.body += "\"Use gzip compression for text-based content\",";
+    res.body += "\"Enable adaptive compression levels based on content size\",";
+    res.body += "\"Pre-compress static content for faster delivery\",";
+    res.body += "\"Monitor bandwidth usage per client\",";
+    res.body += "\"Implement content caching for frequently accessed resources\"";
+    res.body += "]";
+    res.body += "}";
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    std::cout << "📊 Bandwidth optimization endpoint processed in " << duration.count() << " μs" << std::endl;
+    
+    return res;
 }
 
 // ApiEndpoints implementation

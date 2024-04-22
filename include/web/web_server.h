@@ -83,6 +83,21 @@ private:
     std::vector<double> cpu_usage_history_;
     size_t cache_hits_;
     size_t cache_misses_;
+    
+    // Bandwidth optimization members
+    bool compression_enabled_;
+    int compression_level_;
+    size_t min_compression_size_;
+    bool adaptive_compression_enabled_;
+    bool bandwidth_throttling_enabled_;
+    size_t max_bandwidth_per_client_;
+    std::map<std::string, std::pair<size_t, std::chrono::steady_clock::time_point>> bandwidth_usage_;
+    std::mutex bandwidth_mutex_;
+    std::map<std::string, std::string> pre_compressed_content_;
+    std::mutex pre_compressed_mutex_;
+    size_t total_bytes_sent_;
+    size_t total_bytes_compressed_;
+    double average_compression_ratio_;
 
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
@@ -113,6 +128,8 @@ public:
     HttpResponse handle_metrics(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_monitoring_status(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_performance_metrics(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_bandwidth_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_bandwidth_optimization(const HttpRequest& req, HttpResponse& res);
     
     // Storage integration
     void set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> storage);
@@ -160,6 +177,22 @@ private:
     std::vector<size_t> get_memory_usage_history();
     std::vector<double> get_cpu_usage_history();
     void update_monitoring_data(double response_time, size_t memory_usage, double cpu_usage);
+    
+    // Bandwidth optimization methods
+    std::optional<std::string> compress_content(const std::string& content);
+    std::optional<std::string> decompress_content(const std::string& compressed_content);
+    bool should_compress_content(const std::string& content_type, size_t content_length);
+    void optimize_response_headers(HttpResponse& response);
+    int get_adaptive_compression_level(const std::string& content_type, size_t content_length);
+    bool should_throttle_bandwidth(const std::string& client_ip, size_t response_size);
+    void update_bandwidth_usage(const std::string& client_ip, size_t bytes_sent);
+    double get_bandwidth_usage_rate(const std::string& client_ip);
+    void pre_compress_static_content();
+    std::optional<std::string> get_pre_compressed_content(const std::string& content_key);
+    void cache_compressed_content(const std::string& content_key, const std::string& compressed_content);
+    bool supports_compression(const std::map<std::string, std::string>& headers);
+    std::string get_optimal_encoding(const std::map<std::string, std::string>& headers);
+    void log_bandwidth_metrics(const std::string& client_ip, size_t original_size, size_t compressed_size, double compression_ratio);
 };
 
 // API endpoints manager
