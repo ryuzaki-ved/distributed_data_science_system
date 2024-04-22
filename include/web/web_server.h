@@ -99,6 +99,21 @@ private:
     size_t total_bytes_compressed_;
     double average_compression_ratio_;
 
+    // Analytics and profiling members
+    bool analytics_enabled_;
+    std::map<std::string, std::vector<std::chrono::microseconds>> endpoint_performance_;
+    std::map<std::string, size_t> endpoint_request_counts_;
+    std::map<std::string, size_t> endpoint_error_counts_;
+    std::map<int, size_t> status_code_counts_;
+    std::map<std::string, size_t> user_agent_counts_;
+    std::map<std::string, size_t> ip_address_counts_;
+    std::vector<std::chrono::steady_clock::time_point> request_timestamps_;
+    std::mutex analytics_mutex_;
+    size_t total_requests_;
+    size_t total_responses_;
+    size_t total_errors_;
+    std::chrono::steady_clock::time_point analytics_start_time_;
+
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
     ~WebServer();
@@ -130,6 +145,29 @@ public:
     HttpResponse handle_performance_metrics(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_bandwidth_status(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_bandwidth_optimization(const HttpRequest& req, HttpResponse& res);
+
+    // Analytics and profiling methods
+    void record_request_analytics(const HttpRequest& req, const HttpResponse& res, 
+                                 std::chrono::microseconds response_time);
+    void record_endpoint_performance(const std::string& endpoint, std::chrono::microseconds response_time);
+    void record_status_code(int status_code);
+    void record_user_agent(const std::string& user_agent);
+    void record_ip_address(const std::string& ip_address);
+    double calculate_endpoint_average_response_time(const std::string& endpoint);
+    double calculate_endpoint_error_rate(const std::string& endpoint);
+    size_t get_endpoint_request_count(const std::string& endpoint);
+    std::map<std::string, double> get_top_performing_endpoints(size_t limit = 10);
+    std::map<std::string, double> get_top_error_endpoints(size_t limit = 10);
+    std::map<int, size_t> get_status_code_distribution();
+    std::map<std::string, size_t> get_user_agent_distribution(size_t limit = 10);
+    std::map<std::string, size_t> get_ip_address_distribution(size_t limit = 10);
+    double get_requests_per_second();
+    double get_average_response_time();
+    double get_error_rate();
+    void reset_analytics();
+    HttpResponse handle_analytics_dashboard(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_performance_report(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_endpoint_analytics(const HttpRequest& req, HttpResponse& res);
     
     // Storage integration
     void set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> storage);

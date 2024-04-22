@@ -36,10 +36,11 @@ WebServer::WebServer(int port, const std::string& host)
       max_request_size_(10485760), max_header_size_(8192), routing_enabled_(true), 
       middleware_enabled_(true), route_cache_enabled_(true), monitoring_enabled_(true), 
       health_check_interval_(30), last_health_check_(std::chrono::steady_clock::now()),
-      start_time_(std::chrono::steady_clock::now()), cache_hits_(0), cache_misses_(0),
-      adaptive_compression_enabled_(true), bandwidth_throttling_enabled_(true), 
-      max_bandwidth_per_client_(10485760), total_bytes_sent_(0), total_bytes_compressed_(0), 
-      average_compression_ratio_(0.0) {
+          start_time_(std::chrono::steady_clock::now()), cache_hits_(0), cache_misses_(0),
+    adaptive_compression_enabled_(true), bandwidth_throttling_enabled_(true),
+    max_bandwidth_per_client_(10485760), total_bytes_sent_(0), total_bytes_compressed_(0),
+    average_compression_ratio_(0.0), analytics_enabled_(true), total_requests_(0),
+    total_responses_(0), total_errors_(0), analytics_start_time_(std::chrono::steady_clock::now()) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -50,6 +51,7 @@ WebServer::WebServer(int port, const std::string& host)
     std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
     std::cout << "🔄 Adaptive compression: " << (adaptive_compression_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "🚫 Bandwidth throttling: " << (bandwidth_throttling_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_bandwidth_per_client_ / 1024 / 1024 << " MB/min)" << std::endl;
+    std::cout << "📊 Analytics and profiling: " << (analytics_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
@@ -196,6 +198,18 @@ void WebServer::initialize_default_routes() {
     
     add_get_route("/api/bandwidth/optimization", [this](const HttpRequest& req, HttpResponse& res) {
         return handle_bandwidth_optimization(req, res);
+    });
+
+    add_get_route("/api/analytics/dashboard", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_analytics_dashboard(req, res);
+    });
+
+    add_get_route("/api/analytics/performance", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_performance_report(req, res);
+    });
+
+    add_get_route("/api/analytics/endpoints", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_endpoint_analytics(req, res);
     });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
@@ -853,6 +867,14 @@ void WebServer::print_analytics() {
     std::cout << "   Average Compression Ratio: " << std::fixed << std::setprecision(1) << average_compression_ratio_ << "%" << std::endl;
     std::cout << "   Pre-compressed Content: " << pre_compressed_content_.size() << " items" << std::endl;
     std::cout << "   Active Bandwidth Clients: " << bandwidth_usage_.size() << std::endl;
+    std::cout << "   Analytics Enabled: " << (analytics_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "   Total Requests: " << total_requests_ << std::endl;
+    std::cout << "   Total Responses: " << total_responses_ << std::endl;
+    std::cout << "   Total Errors: " << total_errors_ << std::endl;
+    std::cout << "   Requests per Second: " << std::fixed << std::setprecision(2) << get_requests_per_second() << std::endl;
+    std::cout << "   Average Response Time: " << std::fixed << std::setprecision(2) << get_average_response_time() / 1000.0 << " ms" << std::endl;
+    std::cout << "   Error Rate: " << std::fixed << std::setprecision(2) << get_error_rate() << "%" << std::endl;
+    std::cout << "   Tracked Endpoints: " << endpoint_performance_.size() << std::endl;
     std::cout << "   Request Validation: " << (validation_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
@@ -2161,6 +2183,345 @@ void WebSocketHandler::notify_training_progress(const std::string& job_id, doubl
 void WebSocketHandler::notify_cluster_status_change(const std::string& status) {
     // Stub implementation
     std::cout << "Cluster status changed to: " << status << std::endl;
+}
+
+// Analytics and profiling methods
+void WebServer::record_request_analytics(const HttpRequest& req, const HttpResponse& res, 
+                                         std::chrono::microseconds response_time) {
+    if (!analytics_enabled_) return;
+    
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    total_requests_++;
+    total_responses_++;
+    
+    if (res.status_code >= 400) {
+        total_errors_++;
+    }
+    
+    // Record endpoint performance
+    record_endpoint_performance(req.path, response_time);
+    
+    // Record status code
+    record_status_code(res.status_code);
+    
+    // Record user agent
+    auto user_agent_it = req.headers.find("User-Agent");
+    if (user_agent_it != req.headers.end()) {
+        record_user_agent(user_agent_it->second);
+    }
+    
+    // Record IP address (extract from request)
+    std::string client_ip = "unknown";
+    auto x_forwarded_for = req.headers.find("X-Forwarded-For");
+    if (x_forwarded_for != req.headers.end()) {
+        client_ip = x_forwarded_for->second;
+    } else {
+        auto x_real_ip = req.headers.find("X-Real-IP");
+        if (x_real_ip != req.headers.end()) {
+            client_ip = x_real_ip->second;
+        }
+    }
+    record_ip_address(client_ip);
+    
+    // Record request timestamp
+    request_timestamps_.push_back(std::chrono::steady_clock::now());
+    
+    // Keep only last 1000 timestamps
+    if (request_timestamps_.size() > 1000) {
+        request_timestamps_.erase(request_timestamps_.begin());
+    }
+}
+
+void WebServer::record_endpoint_performance(const std::string& endpoint, std::chrono::microseconds response_time) {
+    endpoint_performance_[endpoint].push_back(response_time);
+    endpoint_request_counts_[endpoint]++;
+    
+    // Keep only last 100 performance records per endpoint
+    if (endpoint_performance_[endpoint].size() > 100) {
+        endpoint_performance_[endpoint].erase(endpoint_performance_[endpoint].begin());
+    }
+}
+
+void WebServer::record_status_code(int status_code) {
+    status_code_counts_[status_code]++;
+}
+
+void WebServer::record_user_agent(const std::string& user_agent) {
+    user_agent_counts_[user_agent]++;
+}
+
+void WebServer::record_ip_address(const std::string& ip_address) {
+    ip_address_counts_[ip_address]++;
+}
+
+double WebServer::calculate_endpoint_average_response_time(const std::string& endpoint) {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    auto it = endpoint_performance_.find(endpoint);
+    if (it == endpoint_performance_.end() || it->second.empty()) {
+        return 0.0;
+    }
+    
+    double total_microseconds = 0.0;
+    for (const auto& time : it->second) {
+        total_microseconds += time.count();
+    }
+    
+    return total_microseconds / it->second.size();
+}
+
+double WebServer::calculate_endpoint_error_rate(const std::string& endpoint) {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    auto request_count = endpoint_request_counts_.find(endpoint);
+    auto error_count = endpoint_error_counts_.find(endpoint);
+    
+    if (request_count == endpoint_request_counts_.end() || request_count->second == 0) {
+        return 0.0;
+    }
+    
+    size_t errors = (error_count != endpoint_error_counts_.end()) ? error_count->second : 0;
+    return static_cast<double>(errors) / request_count->second * 100.0;
+}
+
+size_t WebServer::get_endpoint_request_count(const std::string& endpoint) {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    auto it = endpoint_request_counts_.find(endpoint);
+    return (it != endpoint_request_counts_.end()) ? it->second : 0;
+}
+
+std::map<std::string, double> WebServer::get_top_performing_endpoints(size_t limit) {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    std::vector<std::pair<std::string, double>> endpoint_times;
+    for (const auto& endpoint : endpoint_performance_) {
+        double avg_time = calculate_endpoint_average_response_time(endpoint.first);
+        if (avg_time > 0) {
+            endpoint_times.push_back({endpoint.first, avg_time});
+        }
+    }
+    
+    // Sort by response time (ascending - fastest first)
+    std::sort(endpoint_times.begin(), endpoint_times.end(),
+              [](const auto& a, const auto& b) { return a.second < b.second; });
+    
+    std::map<std::string, double> result;
+    for (size_t i = 0; i < std::min(limit, endpoint_times.size()); ++i) {
+        result[endpoint_times[i].first] = endpoint_times[i].second;
+    }
+    
+    return result;
+}
+
+std::map<std::string, double> WebServer::get_top_error_endpoints(size_t limit) {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    std::vector<std::pair<std::string, double>> endpoint_errors;
+    for (const auto& endpoint : endpoint_request_counts_) {
+        double error_rate = calculate_endpoint_error_rate(endpoint.first);
+        if (error_rate > 0) {
+            endpoint_errors.push_back({endpoint.first, error_rate});
+        }
+    }
+    
+    // Sort by error rate (descending - highest errors first)
+    std::sort(endpoint_errors.begin(), endpoint_errors.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    std::map<std::string, double> result;
+    for (size_t i = 0; i < std::min(limit, endpoint_errors.size()); ++i) {
+        result[endpoint_errors[i].first] = endpoint_errors[i].second;
+    }
+    
+    return result;
+}
+
+std::map<int, size_t> WebServer::get_status_code_distribution() {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    return status_code_counts_;
+}
+
+std::map<std::string, size_t> WebServer::get_user_agent_distribution(size_t limit) {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    std::vector<std::pair<std::string, size_t>> agents(user_agent_counts_.begin(), user_agent_counts_.end());
+    std::sort(agents.begin(), agents.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    std::map<std::string, size_t> result;
+    for (size_t i = 0; i < std::min(limit, agents.size()); ++i) {
+        result[agents[i].first] = agents[i].second;
+    }
+    
+    return result;
+}
+
+std::map<std::string, size_t> WebServer::get_ip_address_distribution(size_t limit) {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    std::vector<std::pair<std::string, size_t>> ips(ip_address_counts_.begin(), ip_address_counts_.end());
+    std::sort(ips.begin(), ips.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    std::map<std::string, size_t> result;
+    for (size_t i = 0; i < std::min(limit, ips.size()); ++i) {
+        result[ips[i].first] = ips[i].second;
+    }
+    
+    return result;
+}
+
+double WebServer::get_requests_per_second() {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    if (request_timestamps_.empty()) {
+        return 0.0;
+    }
+    
+    auto now = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(now - analytics_start_time_).count();
+    
+    if (duration == 0) {
+        return static_cast<double>(total_requests_);
+    }
+    
+    return static_cast<double>(total_requests_) / duration;
+}
+
+double WebServer::get_average_response_time() {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    if (total_responses_ == 0) {
+        return 0.0;
+    }
+    
+    double total_time = 0.0;
+    for (const auto& endpoint : endpoint_performance_) {
+        for (const auto& time : endpoint.second) {
+            total_time += time.count();
+        }
+    }
+    
+    return total_time / total_responses_;
+}
+
+double WebServer::get_error_rate() {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    if (total_responses_ == 0) {
+        return 0.0;
+    }
+    
+    return static_cast<double>(total_errors_) / total_responses_ * 100.0;
+}
+
+void WebServer::reset_analytics() {
+    std::lock_guard<std::mutex> lock(analytics_mutex_);
+    
+    endpoint_performance_.clear();
+    endpoint_request_counts_.clear();
+    endpoint_error_counts_.clear();
+    status_code_counts_.clear();
+    user_agent_counts_.clear();
+    ip_address_counts_.clear();
+    request_timestamps_.clear();
+    
+    total_requests_ = 0;
+    total_responses_ = 0;
+    total_errors_ = 0;
+    analytics_start_time_ = std::chrono::steady_clock::now();
+}
+
+HttpResponse WebServer::handle_analytics_dashboard(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    std::stringstream json;
+    json << "{";
+    json << "\"analytics_enabled\": " << (analytics_enabled_ ? "true" : "false") << ",";
+    json << "\"total_requests\": " << total_requests_ << ",";
+    json << "\"total_responses\": " << total_responses_ << ",";
+    json << "\"total_errors\": " << total_errors_ << ",";
+    json << "\"requests_per_second\": " << std::fixed << std::setprecision(2) << get_requests_per_second() << ",";
+    json << "\"average_response_time_ms\": " << std::fixed << std::setprecision(2) << get_average_response_time() / 1000.0 << ",";
+    json << "\"error_rate_percent\": " << std::fixed << std::setprecision(2) << get_error_rate() << ",";
+    json << "\"uptime_seconds\": " << std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - analytics_start_time_).count();
+    json << "}";
+    
+    res.body = json.str();
+    return res;
+}
+
+HttpResponse WebServer::handle_performance_report(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    auto top_performing = get_top_performing_endpoints(10);
+    auto top_errors = get_top_error_endpoints(10);
+    auto status_distribution = get_status_code_distribution();
+    
+    std::stringstream json;
+    json << "{";
+    json << "\"top_performing_endpoints\": {";
+    bool first = true;
+    for (const auto& endpoint : top_performing) {
+        if (!first) json << ",";
+        json << "\"" << endpoint.first << "\": " << std::fixed << std::setprecision(2) << endpoint.second;
+        first = false;
+    }
+    json << "},";
+    
+    json << "\"top_error_endpoints\": {";
+    first = true;
+    for (const auto& endpoint : top_errors) {
+        if (!first) json << ",";
+        json << "\"" << endpoint.first << "\": " << std::fixed << std::setprecision(2) << endpoint.second;
+        first = false;
+    }
+    json << "},";
+    
+    json << "\"status_code_distribution\": {";
+    first = true;
+    for (const auto& status : status_distribution) {
+        if (!first) json << ",";
+        json << "\"" << status.first << "\": " << status.second;
+        first = false;
+    }
+    json << "}";
+    json << "}";
+    
+    res.body = json.str();
+    return res;
+}
+
+HttpResponse WebServer::handle_endpoint_analytics(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    std::string endpoint = req.query_params.count("endpoint") ? req.query_params.at("endpoint") : "";
+    
+    if (endpoint.empty()) {
+        res.status_code = 400;
+        res.body = "{\"error\": \"endpoint parameter required\"}";
+        return res;
+    }
+    
+    double avg_response_time = calculate_endpoint_average_response_time(endpoint);
+    double error_rate = calculate_endpoint_error_rate(endpoint);
+    size_t request_count = get_endpoint_request_count(endpoint);
+    
+    std::stringstream json;
+    json << "{";
+    json << "\"endpoint\": \"" << endpoint << "\",";
+    json << "\"request_count\": " << request_count << ",";
+    json << "\"average_response_time_ms\": " << std::fixed << std::setprecision(2) << avg_response_time / 1000.0 << ",";
+    json << "\"error_rate_percent\": " << std::fixed << std::setprecision(2) << error_rate;
+    json << "}";
+    
+    res.body = json.str();
+    return res;
 }
 
 } // namespace web
