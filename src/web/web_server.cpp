@@ -21,6 +21,7 @@
 #include <zlib.h>
 #include <cctype>
 #include <sstream>
+#include <functional>
 
 namespace dds {
 namespace web {
@@ -31,7 +32,8 @@ WebServer::WebServer(int port, const std::string& host)
       active_connections_(0), connection_timeout_(30), thread_pool_size_(8), shutdown_thread_pool_(false),
       cache_enabled_(true), cache_ttl_(300), max_cache_size_(1000), compression_enabled_(true), 
       compression_level_(6), min_compression_size_(1024), validation_enabled_(true), 
-      max_request_size_(10485760), max_header_size_(8192) {
+      max_request_size_(10485760), max_header_size_(8192), routing_enabled_(true), 
+      middleware_enabled_(true), route_cache_enabled_(true) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -41,6 +43,10 @@ WebServer::WebServer(int port, const std::string& host)
     std::cout << "💾 Response cache enabled (TTL: " << cache_ttl_ << "s, Max: " << max_cache_size_ << " entries)" << std::endl;
     std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
     std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
+    std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
+    
+    // Initialize default routes
+    initialize_default_routes();
 }
 
 WebServer::~WebServer() {
@@ -97,6 +103,197 @@ void WebServer::add_put_route(const std::string& path, RouteHandler handler) {
 
 void WebServer::add_delete_route(const std::string& path, RouteHandler handler) {
     add_route("DELETE", path, handler);
+}
+
+void WebServer::add_middleware(const std::string& name, MiddlewareHandler middleware) {
+    if (middleware_enabled_) {
+        middleware_stack_.push_back({name, middleware});
+        std::cout << "🔧 Middleware '" << name << "' registered" << std::endl;
+    }
+}
+
+void WebServer::add_route_group(const std::string& prefix, const std::vector<RouteDefinition>& routes) {
+    for (const auto& route : routes) {
+        std::string full_path = prefix + route.path;
+        add_route(route.method, full_path, route.handler);
+    }
+    std::cout << "📁 Route group '" << prefix << "' registered with " << routes.size() << " routes" << std::endl;
+}
+
+void WebServer::initialize_default_routes() {
+    // Add default middleware
+    add_middleware("logging", [this](const HttpRequest& req, HttpResponse& res, NextHandler next) {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        next(req, res);
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        std::cout << "🔍 Middleware [logging] - " << req.method << " " << req.path 
+                  << " -> " << res.status_code << " (" << duration.count() << "μs)" << std::endl;
+    });
+    
+    add_middleware("cors", [this](const HttpRequest& req, HttpResponse& res, NextHandler next) {
+        res.headers["Access-Control-Allow-Origin"] = "*";
+        res.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+        res.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization";
+        next(req, res);
+    });
+    
+    add_middleware("security", [this](const HttpRequest& req, HttpResponse& res, NextHandler next) {
+        res.headers["X-Content-Type-Options"] = "nosniff";
+        res.headers["X-Frame-Options"] = "DENY";
+        res.headers["X-XSS-Protection"] = "1; mode=block";
+        next(req, res);
+    });
+    
+    // Register default routes
+    add_get_route("/", [this](const HttpRequest& req, HttpResponse& res) {
+        return serve_dashboard(req, res);
+    });
+    
+    add_get_route("/api/status", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_status(req, res);
+    });
+    
+    add_get_route("/api/routes", [this](const HttpRequest& req, HttpResponse& res) {
+        return list_routes(req, res);
+    });
+    
+    add_get_route("/api/middleware", [this](const HttpRequest& req, HttpResponse& res) {
+        return list_middleware(req, res);
+    });
+    
+    std::cout << "✅ Default routes and middleware initialized" << std::endl;
+}
+
+std::optional<RouteHandler> WebServer::find_route(const std::string& method, const std::string& path) {
+    std::string route_key = method + ":" + path;
+    
+    // Check route cache first
+    if (route_cache_enabled_) {
+        auto cache_it = route_cache_.find(route_key);
+        if (cache_it != route_cache_.end()) {
+            return cache_it->second;
+        }
+    }
+    
+    // Check exact match
+    auto it = routes_.find(route_key);
+    if (it != routes_.end()) {
+        if (route_cache_enabled_) {
+            route_cache_[route_key] = it->second;
+        }
+        return it->second;
+    }
+    
+    // Check pattern matching
+    for (const auto& route : routes_) {
+        if (match_route_pattern(route.first, method + ":" + path)) {
+            if (route_cache_enabled_) {
+                route_cache_[route_key] = route.second;
+            }
+            return route.second;
+        }
+    }
+    
+    return std::nullopt;
+}
+
+bool WebServer::match_route_pattern(const std::string& pattern, const std::string& path) {
+    // Simple pattern matching for now (can be extended with regex)
+    if (pattern == path) return true;
+    
+    // Handle wildcard patterns like /api/*
+    if (pattern.back() == '*' && path.substr(0, pattern.length() - 1) == pattern.substr(0, pattern.length() - 1)) {
+        return true;
+    }
+    
+    // Handle parameter patterns like /api/users/:id
+    std::vector<std::string> pattern_parts = split_string(pattern, '/');
+    std::vector<std::string> path_parts = split_string(path, '/');
+    
+    if (pattern_parts.size() != path_parts.size()) return false;
+    
+    for (size_t i = 0; i < pattern_parts.size(); ++i) {
+        if (pattern_parts[i].empty() && path_parts[i].empty()) continue;
+        if (pattern_parts[i].empty() || path_parts[i].empty()) return false;
+        if (pattern_parts[i][0] == ':' || pattern_parts[i] == path_parts[i]) continue;
+        return false;
+    }
+    
+    return true;
+}
+
+std::vector<std::string> WebServer::split_string(const std::string& str, char delimiter) {
+    std::vector<std::string> tokens;
+    std::stringstream ss(str);
+    std::string token;
+    while (std::getline(ss, token, delimiter)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+HttpResponse WebServer::execute_middleware_stack(const HttpRequest& req, RouteHandler route_handler) {
+    HttpResponse res;
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    if (middleware_stack_.empty()) {
+        return route_handler(req, res);
+    }
+    
+    size_t current_middleware = 0;
+    
+    std::function<void(const HttpRequest&, HttpResponse&)> next = [&](const HttpRequest& request, HttpResponse& response) {
+        if (current_middleware >= middleware_stack_.size()) {
+            // All middleware executed, call the route handler
+            response = route_handler(request, response);
+            return;
+        }
+        
+        auto& middleware = middleware_stack_[current_middleware++];
+        middleware.handler(request, response, next);
+    };
+    
+    next(req, res);
+    return res;
+}
+
+HttpResponse WebServer::list_routes(const HttpRequest& req, HttpResponse& res) {
+    std::vector<std::map<std::string, std::string>> route_list;
+    
+    for (const auto& route : routes_) {
+        std::map<std::string, std::string> route_info;
+        size_t colon_pos = route.first.find(':');
+        route_info["method"] = route.first.substr(0, colon_pos);
+        route_info["path"] = route.first.substr(colon_pos + 1);
+        route_info["handler"] = "registered";
+        route_list.push_back(route_info);
+    }
+    
+    res.body = "{\"routes\": [";
+    for (size_t i = 0; i < route_list.size(); ++i) {
+        res.body += "{";
+        res.body += "\"method\": \"" + route_list[i]["method"] + "\",";
+        res.body += "\"path\": \"" + route_list[i]["path"] + "\",";
+        res.body += "\"handler\": \"" + route_list[i]["handler"] + "\"";
+        res.body += "}";
+        if (i < route_list.size() - 1) res.body += ",";
+    }
+    res.body += "], \"total\": " + std::to_string(route_list.size()) + "}";
+    
+    return res;
+}
+
+HttpResponse WebServer::list_middleware(const HttpRequest& req, HttpResponse& res) {
+    res.body = "{\"middleware\": [";
+    for (size_t i = 0; i < middleware_stack_.size(); ++i) {
+        res.body += "\"" + middleware_stack_[i].name + "\"";
+        if (i < middleware_stack_.size() - 1) res.body += ",";
+    }
+    res.body += "], \"total\": " + std::to_string(middleware_stack_.size()) + "}";
+    
+    return res;
 }
 
 void WebServer::set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> storage) {
@@ -469,6 +666,10 @@ void WebServer::print_analytics() {
     std::cout << "   Request Validation: " << (validation_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
+    std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "   Middleware Stack: " << middleware_stack_.size() << " handlers" << std::endl;
+    std::cout << "   Registered Routes: " << routes_.size() << " endpoints" << std::endl;
+    std::cout << "   Route Cache: " << (route_cache_enabled_ ? "Enabled" : "Disabled") << " (" << route_cache_.size() << " cached)" << std::endl;
 }
 
 bool WebServer::acquire_connection() {
@@ -590,26 +791,60 @@ HttpResponse WebServer::handle_request_sync(const HttpRequest& req) {
             return response;
         }
         
-        // Route the request based on path and method
-        if (req.path == "/" || req.path == "/dashboard") {
-            response = serve_dashboard();
-        } else if (req.path == "/api/status") {
-            response = handle_status(req);
-        } else if (req.path == "/api/jobs" && req.method == "GET") {
-            response = handle_jobs_list(req);
-        } else if (req.path == "/api/jobs" && req.method == "POST") {
-            response = handle_job_submit(req);
-        } else if (req.path.find("/api/jobs/") == 0 && req.method == "GET") {
-            response = handle_job_status(req);
-        } else if (req.path == "/api/hdfs/list") {
-            response = handle_hdfs_list(req);
-        } else if (req.path == "/api/cluster/info") {
-            response = handle_cluster_info(req);
+        // Use routing framework to find and execute handler
+        if (routing_enabled_) {
+            auto route_handler = find_route(req.method, req.path);
+            if (route_handler) {
+                if (middleware_enabled_) {
+                    response = execute_middleware_stack(req, *route_handler);
+                } else {
+                    response = (*route_handler)(req, response);
+                }
+            } else {
+                // Fallback to legacy routing for backward compatibility
+                if (req.path == "/" || req.path == "/dashboard") {
+                    response = serve_dashboard();
+                } else if (req.path == "/api/status") {
+                    response = handle_status(req);
+                } else if (req.path == "/api/jobs" && req.method == "GET") {
+                    response = handle_jobs_list(req);
+                } else if (req.path == "/api/jobs" && req.method == "POST") {
+                    response = handle_job_submit(req);
+                } else if (req.path.find("/api/jobs/") == 0 && req.method == "GET") {
+                    response = handle_job_status(req);
+                } else if (req.path == "/api/hdfs/list") {
+                    response = handle_hdfs_list(req);
+                } else if (req.path == "/api/cluster/info") {
+                    response = handle_cluster_info(req);
+                } else {
+                    // 404 Not Found
+                    response.status_code = 404;
+                    response.headers["Content-Type"] = "application/json";
+                    response.body = "{\"error\": \"Endpoint not found\", \"path\": \"" + sanitize_string(req.path) + "\"}";
+                }
+            }
         } else {
-            // 404 Not Found
-            response.status_code = 404;
-            response.headers["Content-Type"] = "application/json";
-            response.body = "{\"error\": \"Endpoint not found\", \"path\": \"" + sanitize_string(req.path) + "\"}";
+            // Legacy routing without framework
+            if (req.path == "/" || req.path == "/dashboard") {
+                response = serve_dashboard();
+            } else if (req.path == "/api/status") {
+                response = handle_status(req);
+            } else if (req.path == "/api/jobs" && req.method == "GET") {
+                response = handle_jobs_list(req);
+            } else if (req.path == "/api/jobs" && req.method == "POST") {
+                response = handle_job_submit(req);
+            } else if (req.path.find("/api/jobs/") == 0 && req.method == "GET") {
+                response = handle_job_status(req);
+            } else if (req.path == "/api/hdfs/list") {
+                response = handle_hdfs_list(req);
+            } else if (req.path == "/api/cluster/info") {
+                response = handle_cluster_info(req);
+            } else {
+                // 404 Not Found
+                response.status_code = 404;
+                response.headers["Content-Type"] = "application/json";
+                response.body = "{\"error\": \"Endpoint not found\", \"path\": \"" + sanitize_string(req.path) + "\"}";
+            }
         }
         
         // Sanitize response before sending

@@ -38,6 +38,23 @@ struct HttpResponse {
 // Route handler function type
 using RouteHandler = std::function<HttpResponse(const HttpRequest&)>;
 
+// Middleware handler function type
+using NextHandler = std::function<void(const HttpRequest&, HttpResponse&)>;
+using MiddlewareHandler = std::function<void(const HttpRequest&, HttpResponse&, NextHandler)>;
+
+// Route definition structure
+struct RouteDefinition {
+    std::string method;
+    std::string path;
+    RouteHandler handler;
+};
+
+// Middleware definition structure
+struct MiddlewareDefinition {
+    std::string name;
+    MiddlewareHandler handler;
+};
+
 // Web server for the DDS system
 class WebServer {
 private:
@@ -47,6 +64,13 @@ private:
     std::unique_ptr<std::thread> server_thread_;
     std::map<std::string, RouteHandler> routes_;
     std::shared_ptr<dds::storage::HadoopStorage> hadoop_storage_;
+    
+    // Routing framework members
+    std::vector<MiddlewareDefinition> middleware_stack_;
+    std::map<std::string, RouteHandler> route_cache_;
+    bool routing_enabled_;
+    bool middleware_enabled_;
+    bool route_cache_enabled_;
 
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
@@ -63,6 +87,14 @@ public:
     void add_post_route(const std::string& path, RouteHandler handler);
     void add_put_route(const std::string& path, RouteHandler handler);
     void add_delete_route(const std::string& path, RouteHandler handler);
+    
+    // Routing framework
+    void add_middleware(const std::string& name, MiddlewareHandler middleware);
+    void add_route_group(const std::string& prefix, const std::vector<RouteDefinition>& routes);
+    std::optional<RouteHandler> find_route(const std::string& method, const std::string& path);
+    HttpResponse execute_middleware_stack(const HttpRequest& req, RouteHandler route_handler);
+    HttpResponse list_routes(const HttpRequest& req, HttpResponse& res);
+    HttpResponse list_middleware(const HttpRequest& req, HttpResponse& res);
     
     // Storage integration
     void set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> storage);
@@ -92,6 +124,11 @@ private:
     std::string url_decode(const std::string& encoded);
     std::string generate_json_response(const std::map<std::string, std::string>& data);
     std::string generate_error_response(const std::string& error, int status_code = 400);
+    
+    // Routing framework private methods
+    void initialize_default_routes();
+    bool match_route_pattern(const std::string& pattern, const std::string& path);
+    std::vector<std::string> split_string(const std::string& str, char delimiter);
 };
 
 // API endpoints manager
