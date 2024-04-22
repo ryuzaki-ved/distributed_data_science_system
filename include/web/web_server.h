@@ -71,6 +71,18 @@ private:
     bool routing_enabled_;
     bool middleware_enabled_;
     bool route_cache_enabled_;
+    
+    // Monitoring members
+    bool monitoring_enabled_;
+    int health_check_interval_;
+    std::chrono::steady_clock::time_point last_health_check_;
+    std::chrono::steady_clock::time_point start_time_;
+    std::mutex monitoring_mutex_;
+    std::vector<double> response_time_history_;
+    std::vector<size_t> memory_usage_history_;
+    std::vector<double> cpu_usage_history_;
+    size_t cache_hits_;
+    size_t cache_misses_;
 
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
@@ -95,6 +107,12 @@ public:
     HttpResponse execute_middleware_stack(const HttpRequest& req, RouteHandler route_handler);
     HttpResponse list_routes(const HttpRequest& req, HttpResponse& res);
     HttpResponse list_middleware(const HttpRequest& req, HttpResponse& res);
+    
+    // Monitoring endpoints
+    HttpResponse handle_health_check(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_metrics(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_monitoring_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_performance_metrics(const HttpRequest& req, HttpResponse& res);
     
     // Storage integration
     void set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> storage);
@@ -129,6 +147,19 @@ private:
     void initialize_default_routes();
     bool match_route_pattern(const std::string& pattern, const std::string& path);
     std::vector<std::string> split_string(const std::string& str, char delimiter);
+    
+    // Monitoring helper methods
+    void perform_health_check();
+    double calculate_average_response_time();
+    size_t calculate_cache_hit_rate();
+    long get_uptime_seconds();
+    size_t get_memory_usage_mb();
+    double get_cpu_usage_percent();
+    std::string get_last_health_check_timestamp();
+    std::vector<double> get_response_time_history();
+    std::vector<size_t> get_memory_usage_history();
+    std::vector<double> get_cpu_usage_history();
+    void update_monitoring_data(double response_time, size_t memory_usage, double cpu_usage);
 };
 
 // API endpoints manager

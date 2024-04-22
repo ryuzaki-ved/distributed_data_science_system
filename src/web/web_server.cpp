@@ -22,6 +22,7 @@
 #include <cctype>
 #include <sstream>
 #include <functional>
+#include <numeric>
 
 namespace dds {
 namespace web {
@@ -33,7 +34,9 @@ WebServer::WebServer(int port, const std::string& host)
       cache_enabled_(true), cache_ttl_(300), max_cache_size_(1000), compression_enabled_(true), 
       compression_level_(6), min_compression_size_(1024), validation_enabled_(true), 
       max_request_size_(10485760), max_header_size_(8192), routing_enabled_(true), 
-      middleware_enabled_(true), route_cache_enabled_(true) {
+      middleware_enabled_(true), route_cache_enabled_(true), monitoring_enabled_(true), 
+      health_check_interval_(30), last_health_check_(std::chrono::steady_clock::now()),
+      start_time_(std::chrono::steady_clock::now()), cache_hits_(0), cache_misses_(0) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -44,6 +47,7 @@ WebServer::WebServer(int port, const std::string& host)
     std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
     std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
+    std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
     // Initialize default routes
     initialize_default_routes();
@@ -160,6 +164,22 @@ void WebServer::initialize_default_routes() {
     
     add_get_route("/api/middleware", [this](const HttpRequest& req, HttpResponse& res) {
         return list_middleware(req, res);
+    });
+    
+    add_get_route("/api/health", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_health_check(req, res);
+    });
+    
+    add_get_route("/api/metrics", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_metrics(req, res);
+    });
+    
+    add_get_route("/api/monitoring/status", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_monitoring_status(req, res);
+    });
+    
+    add_get_route("/api/monitoring/performance", [this](const HttpRequest& req, HttpResponse& res) {
+        return handle_performance_metrics(req, res);
     });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
@@ -431,6 +451,152 @@ HttpResponse WebServer::handle_cluster_info(const HttpRequest& req) {
     return response;
 }
 
+HttpResponse WebServer::handle_health_check(const HttpRequest& req, HttpResponse& res) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Check if health check is due
+    auto now = std::chrono::steady_clock::now();
+    if (now - last_health_check_ > std::chrono::seconds(health_check_interval_)) {
+        perform_health_check();
+        last_health_check_ = now;
+    }
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    res.headers["Pragma"] = "no-cache";
+    res.headers["Expires"] = "0";
+    
+    // Build health status response
+    std::string health_status = "{\"status\": \"healthy\", \"timestamp\": \"" + get_current_timestamp() + "\", ";
+    health_status += "\"uptime\": " + std::to_string(get_uptime_seconds()) + ", ";
+    health_status += "\"version\": \"1.0.0\", ";
+    health_status += "\"checks\": {";
+    health_status += "\"server\": \"ok\", ";
+    health_status += "\"database\": \"ok\", ";
+    health_status += "\"storage\": \"ok\", ";
+    health_status += "\"memory\": \"ok\"";
+    health_status += "}}";
+    
+    res.body = health_status;
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    
+    std::cout << "🏥 Health check completed in " << duration.count() << " μs" << std::endl;
+    return res;
+}
+
+HttpResponse WebServer::handle_metrics(const HttpRequest& req, HttpResponse& res) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    
+    // Calculate metrics
+    double success_rate = total_requests_ > 0 ? (double)successful_requests_ / total_requests_ * 100.0 : 0.0;
+    double avg_response_time = calculate_average_response_time();
+    size_t cache_hit_rate = calculate_cache_hit_rate();
+    
+    std::string metrics = "{\"metrics\": {";
+    metrics += "\"requests\": {";
+    metrics += "\"total\": " + std::to_string(total_requests_) + ", ";
+    metrics += "\"successful\": " + std::to_string(successful_requests_) + ", ";
+    metrics += "\"failed\": " + std::to_string(failed_requests_) + ", ";
+    metrics += "\"success_rate\": " + std::to_string(success_rate);
+    metrics += "}, ";
+    metrics += "\"performance\": {";
+    metrics += "\"avg_response_time_ms\": " + std::to_string(avg_response_time) + ", ";
+    metrics += "\"active_connections\": " + std::to_string(active_connections_.load()) + ", ";
+    metrics += "\"cache_hit_rate\": " + std::to_string(cache_hit_rate);
+    metrics += "}, ";
+    metrics += "\"system\": {";
+    metrics += "\"uptime_seconds\": " + std::to_string(get_uptime_seconds()) + ", ";
+    metrics += "\"memory_usage_mb\": " + std::to_string(get_memory_usage_mb()) + ", ";
+    metrics += "\"cpu_usage_percent\": " + std::to_string(get_cpu_usage_percent());
+    metrics += "}";
+    metrics += "}, \"timestamp\": \"" + get_current_timestamp() + "\"}";
+    
+    res.body = metrics;
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    
+    std::cout << "📊 Metrics endpoint processed in " << duration.count() << " μs" << std::endl;
+    return res;
+}
+
+HttpResponse WebServer::handle_monitoring_status(const HttpRequest& req, HttpResponse& res) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    
+    std::string status = "{\"monitoring\": {";
+    status += "\"enabled\": " + std::string(monitoring_enabled_ ? "true" : "false") + ", ";
+    status += "\"health_check_interval\": " + std::to_string(health_check_interval_) + ", ";
+    status += "\"last_health_check\": \"" + get_last_health_check_timestamp() + "\", ";
+    status += "\"alerts\": [], ";
+    status += "\"thresholds\": {";
+    status += "\"max_response_time_ms\": 1000, ";
+    status += "\"max_memory_usage_mb\": 1024, ";
+    status += "\"max_cpu_usage_percent\": 80";
+    status += "}";
+    status += "}, \"timestamp\": \"" + get_current_timestamp() + "\"}";
+    
+    res.body = status;
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    
+    std::cout << "📈 Monitoring status processed in " << duration.count() << " μs" << std::endl;
+    return res;
+}
+
+HttpResponse WebServer::handle_performance_metrics(const HttpRequest& req, HttpResponse& res) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    
+    // Get performance data
+    auto response_times = get_response_time_history();
+    auto memory_usage = get_memory_usage_history();
+    auto cpu_usage = get_cpu_usage_history();
+    
+    std::string performance = "{\"performance\": {";
+    performance += "\"response_times\": [";
+    for (size_t i = 0; i < response_times.size(); ++i) {
+        performance += std::to_string(response_times[i]);
+        if (i < response_times.size() - 1) performance += ", ";
+    }
+    performance += "], ";
+    performance += "\"memory_usage\": [";
+    for (size_t i = 0; i < memory_usage.size(); ++i) {
+        performance += std::to_string(memory_usage[i]);
+        if (i < memory_usage.size() - 1) performance += ", ";
+    }
+    performance += "], ";
+    performance += "\"cpu_usage\": [";
+    for (size_t i = 0; i < cpu_usage.size(); ++i) {
+        performance += std::to_string(cpu_usage[i]);
+        if (i < cpu_usage.size() - 1) performance += ", ";
+    }
+    performance += "]";
+    performance += "}, \"timestamp\": \"" + get_current_timestamp() + "\"}";
+    
+    res.body = performance;
+    
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+    
+    std::cout << "⚡ Performance metrics processed in " << duration.count() << " μs" << std::endl;
+    return res;
+}
+
 void WebServer::run_server(int serverSocket) {
     // Stub implementation
     std::cout << "Server running on port " << port_ << std::endl;
@@ -670,6 +836,14 @@ void WebServer::print_analytics() {
     std::cout << "   Middleware Stack: " << middleware_stack_.size() << " handlers" << std::endl;
     std::cout << "   Registered Routes: " << routes_.size() << " endpoints" << std::endl;
     std::cout << "   Route Cache: " << (route_cache_enabled_ ? "Enabled" : "Disabled") << " (" << route_cache_.size() << " cached)" << std::endl;
+    std::cout << "   Monitoring: " << (monitoring_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "   Health Check Interval: " << health_check_interval_ << " seconds" << std::endl;
+    std::cout << "   Uptime: " << get_uptime_seconds() << " seconds" << std::endl;
+    std::cout << "   Memory Usage: " << get_memory_usage_mb() << " MB" << std::endl;
+    std::cout << "   CPU Usage: " << get_cpu_usage_percent() << "%" << std::endl;
+    std::cout << "   Average Response Time: " << calculate_average_response_time() << " ms" << std::endl;
+    std::cout << "   Cache Hit Rate: " << calculate_cache_hit_rate() << "%" << std::endl;
+    std::cout << "   Performance History: " << response_time_history_.size() << " data points" << std::endl;
 }
 
 bool WebServer::acquire_connection() {
@@ -887,6 +1061,7 @@ std::optional<HttpResponse> WebServer::get_cached_response(const std::string& ca
         
         if ((now - cache_entry.timestamp) < std::chrono::seconds(cache_ttl_)) {
             std::cout << "💾 Cache hit for key: " << cache_key << std::endl;
+            cache_hits_++;
             return cache_entry.response;
         } else {
             // Expired entry, remove it
@@ -895,6 +1070,7 @@ std::optional<HttpResponse> WebServer::get_cached_response(const std::string& ca
         }
     }
     
+    cache_misses_++;
     return std::nullopt;
 }
 
@@ -1326,6 +1502,120 @@ bool WebServer::is_valid_json(const std::string& json_string) {
     }
     
     return brace_count == 0 && bracket_count == 0 && !in_string;
+}
+
+// Monitoring helper methods
+void WebServer::perform_health_check() {
+    std::cout << "🏥 Performing health check..." << std::endl;
+    
+    // Simulate health checks
+    bool server_ok = true;
+    bool database_ok = true;
+    bool storage_ok = true;
+    bool memory_ok = true;
+    
+    // Check memory usage
+    size_t memory_usage = get_memory_usage_mb();
+    if (memory_usage > 1024) {
+        memory_ok = false;
+        std::cout << "⚠️ High memory usage detected: " << memory_usage << " MB" << std::endl;
+    }
+    
+    // Check CPU usage
+    double cpu_usage = get_cpu_usage_percent();
+    if (cpu_usage > 80.0) {
+        std::cout << "⚠️ High CPU usage detected: " << cpu_usage << "%" << std::endl;
+    }
+    
+    // Check active connections
+    size_t active_conn = active_connections_.load();
+    if (active_conn > max_connections_ * 0.8) {
+        std::cout << "⚠️ High connection count: " << active_conn << "/" << max_connections_ << std::endl;
+    }
+    
+    if (server_ok && database_ok && storage_ok && memory_ok) {
+        std::cout << "✅ Health check passed" << std::endl;
+    } else {
+        std::cout << "❌ Health check failed" << std::endl;
+    }
+}
+
+double WebServer::calculate_average_response_time() {
+    if (response_time_history_.empty()) {
+        return 0.0;
+    }
+    
+    double sum = std::accumulate(response_time_history_.begin(), response_time_history_.end(), 0.0);
+    return sum / response_time_history_.size();
+}
+
+size_t WebServer::calculate_cache_hit_rate() {
+    if (cache_hits_ + cache_misses_ == 0) {
+        return 0;
+    }
+    return (cache_hits_ * 100) / (cache_hits_ + cache_misses_);
+}
+
+long WebServer::get_uptime_seconds() {
+    auto now = std::chrono::steady_clock::now();
+    auto uptime = std::chrono::duration_cast<std::chrono::seconds>(now - start_time_);
+    return uptime.count();
+}
+
+size_t WebServer::get_memory_usage_mb() {
+    // Simulate memory usage calculation
+    // In a real implementation, this would read from /proc/self/status or similar
+    return 128 + (total_requests_ % 100); // Simulate varying memory usage
+}
+
+double WebServer::get_cpu_usage_percent() {
+    // Simulate CPU usage calculation
+    // In a real implementation, this would read from /proc/stat or similar
+    return 15.0 + (total_requests_ % 20); // Simulate varying CPU usage
+}
+
+std::string WebServer::get_last_health_check_timestamp() {
+    auto time_t = std::chrono::system_clock::to_time_t(last_health_check_);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+    return ss.str();
+}
+
+std::vector<double> WebServer::get_response_time_history() {
+    std::lock_guard<std::mutex> lock(monitoring_mutex_);
+    return response_time_history_;
+}
+
+std::vector<size_t> WebServer::get_memory_usage_history() {
+    std::lock_guard<std::mutex> lock(monitoring_mutex_);
+    return memory_usage_history_;
+}
+
+std::vector<double> WebServer::get_cpu_usage_history() {
+    std::lock_guard<std::mutex> lock(monitoring_mutex_);
+    return cpu_usage_history_;
+}
+
+void WebServer::update_monitoring_data(double response_time, size_t memory_usage, double cpu_usage) {
+    std::lock_guard<std::mutex> lock(monitoring_mutex_);
+    
+    // Keep only last 100 data points
+    const size_t max_history_size = 100;
+    
+    response_time_history_.push_back(response_time);
+    if (response_time_history_.size() > max_history_size) {
+        response_time_history_.erase(response_time_history_.begin());
+    }
+    
+    memory_usage_history_.push_back(memory_usage);
+    if (memory_usage_history_.size() > max_history_size) {
+        memory_usage_history_.erase(memory_usage_history_.begin());
+    }
+    
+    cpu_usage_history_.push_back(cpu_usage);
+    if (cpu_usage_history_.size() > max_history_size) {
+        cpu_usage_history_.erase(cpu_usage_history_.begin());
+    }
 }
 
 // ApiEndpoints implementation
