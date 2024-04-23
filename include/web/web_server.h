@@ -114,6 +114,15 @@ private:
     size_t total_errors_;
     std::chrono::steady_clock::time_point analytics_start_time_;
 
+    // Security members
+    bool security_enabled_;
+    std::map<std::string, std::string> csrf_tokens_;
+    std::map<std::string, size_t> security_event_counts_;
+    std::vector<std::string> blocked_ips_;
+    std::map<std::string, std::chrono::steady_clock::time_point> ip_rate_limits_;
+    std::mutex security_mutex_;
+    std::string security_log_file_;
+
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
     ~WebServer();
@@ -146,9 +155,9 @@ public:
     HttpResponse handle_bandwidth_status(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_bandwidth_optimization(const HttpRequest& req, HttpResponse& res);
 
-    // Analytics and profiling methods
-    void record_request_analytics(const HttpRequest& req, const HttpResponse& res, 
-                                 std::chrono::microseconds response_time);
+        // Analytics and profiling methods
+    void record_request_analytics(const HttpRequest& req, const HttpResponse& res,
+                                  std::chrono::microseconds response_time);
     void record_endpoint_performance(const std::string& endpoint, std::chrono::microseconds response_time);
     void record_status_code(int status_code);
     void record_user_agent(const std::string& user_agent);
@@ -168,6 +177,21 @@ public:
     HttpResponse handle_analytics_dashboard(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_performance_report(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_endpoint_analytics(const HttpRequest& req, HttpResponse& res);
+
+    // Security methods
+    std::string sanitize_input(const std::string& input);
+    std::string encode_html_entities(const std::string& input);
+    std::string validate_json(const std::string& json);
+    bool is_sql_injection_attempt(const std::string& input);
+    bool is_xss_attempt(const std::string& input);
+    std::string generate_csrf_token();
+    bool validate_csrf_token(const std::string& token);
+    void add_security_headers(HttpResponse& res);
+    std::string hash_password(const std::string& password);
+    bool verify_password(const std::string& password, const std::string& hash);
+    std::string generate_secure_random_string(size_t length);
+    bool is_rate_limited_by_ip(const std::string& ip);
+    void log_security_event(const std::string& event, const std::string& ip, const std::string& details);
     
     // Storage integration
     void set_hadoop_storage(std::shared_ptr<dds::storage::HadoopStorage> storage);

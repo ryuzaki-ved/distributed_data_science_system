@@ -39,8 +39,9 @@ WebServer::WebServer(int port, const std::string& host)
           start_time_(std::chrono::steady_clock::now()), cache_hits_(0), cache_misses_(0),
     adaptive_compression_enabled_(true), bandwidth_throttling_enabled_(true),
     max_bandwidth_per_client_(10485760), total_bytes_sent_(0), total_bytes_compressed_(0),
-    average_compression_ratio_(0.0), analytics_enabled_(true), total_requests_(0),
-    total_responses_(0), total_errors_(0), analytics_start_time_(std::chrono::steady_clock::now()) {
+    average_compression_ratio_(0.0),                     analytics_enabled_(true), total_requests_(0),
+                    total_responses_(0), total_errors_(0), analytics_start_time_(std::chrono::steady_clock::now()),
+                    security_enabled_(true), security_log_file_("security.log") {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -51,8 +52,9 @@ WebServer::WebServer(int port, const std::string& host)
     std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
     std::cout << "🔄 Adaptive compression: " << (adaptive_compression_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "🚫 Bandwidth throttling: " << (bandwidth_throttling_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_bandwidth_per_client_ / 1024 / 1024 << " MB/min)" << std::endl;
-    std::cout << "📊 Analytics and profiling: " << (analytics_enabled_ ? "Enabled" : "Disabled") << std::endl;
-    std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
+                        std::cout << "📊 Analytics and profiling: " << (analytics_enabled_ ? "Enabled" : "Disabled") << std::endl;
+                    std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
+                    std::cout << "🛡️ Security features: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
@@ -208,9 +210,18 @@ void WebServer::initialize_default_routes() {
         return handle_performance_report(req, res);
     });
 
-    add_get_route("/api/analytics/endpoints", [this](const HttpRequest& req, HttpResponse& res) {
-        return handle_endpoint_analytics(req, res);
-    });
+                        add_get_route("/api/analytics/endpoints", [this](const HttpRequest& req, HttpResponse& res) {
+                        return handle_endpoint_analytics(req, res);
+                    });
+
+                    // Security endpoints
+                    add_get_route("/api/security/status", [this](const HttpRequest& req, HttpResponse& res) {
+                        return handle_security_status(req, res);
+                    });
+
+                    add_post_route("/api/security/csrf-token", [this](const HttpRequest& req, HttpResponse& res) {
+                        return handle_csrf_token_generation(req, res);
+                    });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
 }
@@ -876,6 +887,9 @@ void WebServer::print_analytics() {
     std::cout << "   Error Rate: " << std::fixed << std::setprecision(2) << get_error_rate() << "%" << std::endl;
     std::cout << "   Tracked Endpoints: " << endpoint_performance_.size() << std::endl;
     std::cout << "   Request Validation: " << (validation_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "   Security Enabled: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
+    std::cout << "   Blocked IPs: " << blocked_ips_.size() << std::endl;
+    std::cout << "   Security Events: " << security_event_counts_.size() << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
     std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
@@ -2519,6 +2533,295 @@ HttpResponse WebServer::handle_endpoint_analytics(const HttpRequest& req, HttpRe
     json << "\"average_response_time_ms\": " << std::fixed << std::setprecision(2) << avg_response_time / 1000.0 << ",";
     json << "\"error_rate_percent\": " << std::fixed << std::setprecision(2) << error_rate;
     json << "}";
+    
+    res.body = json.str();
+    return res;
+}
+
+// Security method implementations
+std::string WebServer::sanitize_input(const std::string& input) {
+    if (!security_enabled_) {
+        return input;
+    }
+    
+    std::string sanitized = input;
+    
+    // Remove null bytes
+    sanitized.erase(std::remove(sanitized.begin(), sanitized.end(), '\0'), sanitized.end());
+    
+    // Basic XSS protection
+    sanitized = encode_html_entities(sanitized);
+    
+    // Remove potentially dangerous characters
+    std::string dangerous_chars = "<>\"'&";
+    for (char c : dangerous_chars) {
+        sanitized.erase(std::remove(sanitized.begin(), sanitized.end(), c), sanitized.end());
+    }
+    
+    return sanitized;
+}
+
+std::string WebServer::encode_html_entities(const std::string& input) {
+    std::string encoded = input;
+    
+    // Replace common HTML entities
+    std::map<std::string, std::string> entities = {
+        {"<", "&lt;"}, {">", "&gt;"}, {"\"", "&quot;"}, {"'", "&#39;"}, {"&", "&amp;"}
+    };
+    
+    for (const auto& entity : entities) {
+        size_t pos = 0;
+        while ((pos = encoded.find(entity.first, pos)) != std::string::npos) {
+            encoded.replace(pos, entity.first.length(), entity.second);
+            pos += entity.second.length();
+        }
+    }
+    
+    return encoded;
+}
+
+std::string WebServer::validate_json(const std::string& json) {
+    if (!security_enabled_) {
+        return json;
+    }
+    
+    std::string validated = json;
+    
+    // Basic JSON validation - check for balanced braces and brackets
+    int brace_count = 0, bracket_count = 0;
+    bool in_string = false;
+    char escape_char = 0;
+    
+    for (size_t i = 0; i < validated.length(); ++i) {
+        char c = validated[i];
+        
+        if (escape_char) {
+            escape_char = 0;
+            continue;
+        }
+        
+        if (c == '\\') {
+            escape_char = c;
+            continue;
+        }
+        
+        if (c == '"' && !escape_char) {
+            in_string = !in_string;
+            continue;
+        }
+        
+        if (!in_string) {
+            if (c == '{') brace_count++;
+            else if (c == '}') brace_count--;
+            else if (c == '[') bracket_count++;
+            else if (c == ']') bracket_count--;
+        }
+    }
+    
+    if (brace_count != 0 || bracket_count != 0) {
+        log_security_event("JSON_VALIDATION_FAILED", "unknown", "Unbalanced braces/brackets");
+        return "";
+    }
+    
+    return validated;
+}
+
+bool WebServer::is_sql_injection_attempt(const std::string& input) {
+    if (!security_enabled_) {
+        return false;
+    }
+    
+    std::string lower_input = input;
+    std::transform(lower_input.begin(), lower_input.end(), lower_input.begin(), ::tolower);
+    
+    // Common SQL injection patterns
+    std::vector<std::string> sql_patterns = {
+        "select", "insert", "update", "delete", "drop", "create", "alter", "union",
+        "exec", "execute", "script", "javascript", "vbscript", "onload", "onerror",
+        "1=1", "1=0", "or 1", "and 1", "union select", "information_schema"
+    };
+    
+    for (const auto& pattern : sql_patterns) {
+        if (lower_input.find(pattern) != std::string::npos) {
+            log_security_event("SQL_INJECTION_ATTEMPT", "unknown", "Pattern detected: " + pattern);
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+bool WebServer::is_xss_attempt(const std::string& input) {
+    if (!security_enabled_) {
+        return false;
+    }
+    
+    std::string lower_input = input;
+    std::transform(lower_input.begin(), lower_input.end(), lower_input.begin(), ::tolower);
+    
+    // Common XSS patterns
+    std::vector<std::string> xss_patterns = {
+        "<script", "javascript:", "vbscript:", "onload=", "onerror=", "onclick=",
+        "onmouseover=", "onfocus=", "onblur=", "eval(", "document.cookie",
+        "window.location", "alert(", "confirm(", "prompt("
+    };
+    
+    for (const auto& pattern : xss_patterns) {
+        if (lower_input.find(pattern) != std::string::npos) {
+            log_security_event("XSS_ATTEMPT", "unknown", "Pattern detected: " + pattern);
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+std::string WebServer::generate_csrf_token() {
+    std::lock_guard<std::mutex> lock(security_mutex_);
+    
+    std::string token = generate_secure_random_string(32);
+    std::string session_id = generate_secure_random_string(16);
+    
+    csrf_tokens_[session_id] = token;
+    
+    return token;
+}
+
+bool WebServer::validate_csrf_token(const std::string& token) {
+    if (!security_enabled_) {
+        return true;
+    }
+    
+    std::lock_guard<std::mutex> lock(security_mutex_);
+    
+    for (const auto& pair : csrf_tokens_) {
+        if (pair.second == token) {
+            return true;
+        }
+    }
+    
+    log_security_event("CSRF_TOKEN_INVALID", "unknown", "Invalid CSRF token");
+    return false;
+}
+
+void WebServer::add_security_headers(HttpResponse& res) {
+    if (!security_enabled_) {
+        return;
+    }
+    
+    res.headers["X-Content-Type-Options"] = "nosniff";
+    res.headers["X-Frame-Options"] = "SAMEORIGIN";
+    res.headers["X-XSS-Protection"] = "1; mode=block";
+    res.headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    res.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'";
+    res.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+}
+
+std::string WebServer::hash_password(const std::string& password) {
+    // Simple hash implementation (in production, use bcrypt or similar)
+    std::hash<std::string> hasher;
+    return std::to_string(hasher(password));
+}
+
+bool WebServer::verify_password(const std::string& password, const std::string& hash) {
+    return hash_password(password) == hash;
+}
+
+std::string WebServer::generate_secure_random_string(size_t length) {
+    static const std::string charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    std::string result;
+    result.reserve(length);
+    
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, charset.size() - 1);
+    
+    for (size_t i = 0; i < length; ++i) {
+        result += charset[dis(gen)];
+    }
+    
+    return result;
+}
+
+bool WebServer::is_rate_limited_by_ip(const std::string& ip) {
+    if (!security_enabled_) {
+        return false;
+    }
+    
+    std::lock_guard<std::mutex> lock(security_mutex_);
+    
+    auto now = std::chrono::steady_clock::now();
+    auto it = ip_rate_limits_.find(ip);
+    
+    if (it != ip_rate_limits_.end()) {
+        auto time_diff = std::chrono::duration_cast<std::chrono::seconds>(now - it->second);
+        if (time_diff.count() < 60) { // 1 minute rate limit
+            return true;
+        }
+    }
+    
+    ip_rate_limits_[ip] = now;
+    return false;
+}
+
+void WebServer::log_security_event(const std::string& event, const std::string& ip, const std::string& details) {
+    if (!security_enabled_) {
+        return;
+    }
+    
+    std::lock_guard<std::mutex> lock(security_mutex_);
+    
+    // Update event count
+    security_event_counts_[event]++;
+    
+    // Log to file
+    std::ofstream log_file(security_log_file_, std::ios::app);
+    if (log_file.is_open()) {
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::string timestamp = std::ctime(&time_t);
+        timestamp.pop_back(); // Remove newline
+        
+        log_file << "[" << timestamp << "] SECURITY: " << event << " from " << ip << " - " << details << std::endl;
+        log_file.close();
+    }
+    
+    std::cout << "🛡️ Security event: " << event << " from " << ip << " - " << details << std::endl;
+}
+
+HttpResponse WebServer::handle_security_status(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    std::lock_guard<std::mutex> lock(security_mutex_);
+    
+    std::stringstream json;
+    json << "{";
+    json << "\"security_enabled\": " << (security_enabled_ ? "true" : "false") << ",";
+    json << "\"blocked_ips_count\": " << blocked_ips_.size() << ",";
+    json << "\"security_events\": {";
+    
+    bool first = true;
+    for (const auto& event : security_event_counts_) {
+        if (!first) json << ",";
+        json << "\"" << event.first << "\": " << event.second;
+        first = false;
+    }
+    json << "}";
+    json << "}";
+    
+    res.body = json.str();
+    return res;
+}
+
+HttpResponse WebServer::handle_csrf_token_generation(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    std::string token = generate_csrf_token();
+    
+    std::stringstream json;
+    json << "{\"csrf_token\": \"" << token << "\"}";
     
     res.body = json.str();
     return res;
