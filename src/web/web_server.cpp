@@ -44,9 +44,11 @@ WebServer::WebServer(int port, const std::string& host)
                                 security_enabled_(true), security_log_file_("security.log"), max_cache_size_(1000),
                                 cache_ttl_(std::chrono::seconds(300)), intelligent_caching_enabled_(true),                                 cache_hit_ratio_(0.0),
                                 total_cache_requests_(0), cache_stats_start_time_(std::chrono::steady_clock::now()),
-                                server_healthy_(true), consecutive_errors_(0), total_errors_(0),
-                                last_health_check_(std::chrono::steady_clock::now()), health_check_interval_(std::chrono::seconds(30)),
-                                error_log_file_("error.log"), auto_recovery_enabled_(true) {
+                                                                  server_healthy_(true), consecutive_errors_(0), total_errors_(0),
+                                  last_health_check_(std::chrono::steady_clock::now()), health_check_interval_(std::chrono::seconds(30)),
+                                  error_log_file_("error.log"), auto_recovery_enabled_(true),
+                                  content_negotiation_enabled_(true), default_content_type_("application/json"),
+                                  default_encoding_("identity"), default_language_("en") {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -62,6 +64,7 @@ WebServer::WebServer(int port, const std::string& host)
                                                         std::cout << "🛡️ Security features: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
                                     std::cout << "🧠 Intelligent caching: " << (intelligent_caching_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_cache_size_ << " entries, TTL: " << cache_ttl_.count() << "s)" << std::endl;
                                     std::cout << "🔄 Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << " (health check: " << health_check_interval_.count() << "s)" << std::endl;
+                                    std::cout << "🤝 Content negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << " (default: " << default_content_type_ << ")" << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
@@ -246,6 +249,11 @@ void WebServer::initialize_default_routes() {
 
                                 add_get_route("/api/error/status", [this](const HttpRequest& req, HttpResponse& res) {
                                     return handle_error_status(req, res);
+                                });
+
+                                // Content negotiation endpoints
+                                add_get_route("/api/negotiation/test", [this](const HttpRequest& req, HttpResponse& res) {
+                                    return handle_content_negotiation_test(req, res);
                                 });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
@@ -921,6 +929,8 @@ void WebServer::print_analytics() {
                                     std::cout << "   Server Health: " << (server_healthy_ ? "Healthy" : "Unhealthy") << std::endl;
                                     std::cout << "   Total Errors: " << total_errors_ << ", Consecutive: " << consecutive_errors_ << std::endl;
                                     std::cout << "   Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << std::endl;
+                                    std::cout << "   Content Negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << std::endl;
+                                    std::cout << "   Negotiation Requests: " << content_negotiation_stats_["total_requests"] << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
     std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
@@ -3352,6 +3362,270 @@ HttpResponse WebServer::handle_health_check(const HttpRequest& req, HttpResponse
     json << "}";
     
     res.body = json.str();
+    return res;
+}
+
+// Content negotiation and request processing methods
+std::string WebServer::negotiate_content_type(const HttpRequest& req, const std::vector<std::string>& available_types) {
+    if (!content_negotiation_enabled_ || available_types.empty()) {
+        return default_content_type_;
+    }
+    
+    auto it = req.headers.find("Accept");
+    if (it == req.headers.end()) {
+        return available_types[0];
+    }
+    
+    return parse_accept_header(it->second, available_types);
+}
+
+std::string WebServer::negotiate_encoding(const HttpRequest& req, const std::vector<std::string>& available_encodings) {
+    if (!content_negotiation_enabled_ || available_encodings.empty()) {
+        return default_encoding_;
+    }
+    
+    auto it = req.headers.find("Accept-Encoding");
+    if (it == req.headers.end()) {
+        return available_encodings[0];
+    }
+    
+    return parse_accept_header(it->second, available_encodings);
+}
+
+std::string WebServer::negotiate_language(const HttpRequest& req, const std::vector<std::string>& available_languages) {
+    if (!content_negotiation_enabled_ || available_languages.empty()) {
+        return default_language_;
+    }
+    
+    auto it = req.headers.find("Accept-Language");
+    if (it == req.headers.end()) {
+        return available_languages[0];
+    }
+    
+    return parse_accept_header(it->second, available_languages);
+}
+
+std::string WebServer::parse_accept_header(const std::string& accept_header, const std::vector<std::string>& available_options) {
+    auto quality_map = parse_quality_values(accept_header);
+    return select_best_match(quality_map, available_options);
+}
+
+std::map<std::string, double> WebServer::parse_quality_values(const std::string& header_value) {
+    std::map<std::string, double> quality_map;
+    std::vector<std::string> parts = split_string(header_value, ',');
+    
+    for (const auto& part : parts) {
+        std::vector<std::string> subparts = split_string(part, ';');
+        if (subparts.empty()) continue;
+        
+        std::string type = subparts[0];
+        // Remove leading/trailing whitespace
+        type.erase(0, type.find_first_not_of(" \t"));
+        type.erase(type.find_last_not_of(" \t") + 1);
+        
+        double quality = 1.0;
+        for (size_t i = 1; i < subparts.size(); ++i) {
+            if (subparts[i].find("q=") == 0) {
+                try {
+                    quality = std::stod(subparts[i].substr(2));
+                } catch (...) {
+                    quality = 0.0;
+                }
+                break;
+            }
+        }
+        
+        quality_map[type] = quality;
+    }
+    
+    return quality_map;
+}
+
+std::string WebServer::select_best_match(const std::map<std::string, double>& quality_map, const std::vector<std::string>& available_options) {
+    std::string best_match = available_options[0];
+    double best_quality = 0.0;
+    
+    for (const auto& option : available_options) {
+        auto it = quality_map.find(option);
+        if (it != quality_map.end() && it->second > best_quality) {
+            best_quality = it->second;
+            best_match = option;
+        }
+    }
+    
+    // Check for wildcard matches
+    for (const auto& pair : quality_map) {
+        if (pair.first == "*/*" || pair.first == "*") {
+            if (pair.second > best_quality) {
+                best_quality = pair.second;
+                best_match = available_options[0];
+            }
+        }
+    }
+    
+    return best_match;
+}
+
+void WebServer::add_vary_header(HttpResponse& res, const std::vector<std::string>& vary_fields) {
+    if (vary_fields.empty()) return;
+    
+    std::string vary_value;
+    for (size_t i = 0; i < vary_fields.size(); ++i) {
+        if (i > 0) vary_value += ", ";
+        vary_value += vary_fields[i];
+    }
+    
+    res.headers["Vary"] = vary_value;
+}
+
+void WebServer::add_content_negotiation_headers(HttpResponse& res, const HttpRequest& req) {
+    // Add Vary header for content negotiation
+    std::vector<std::string> vary_fields;
+    if (req.headers.find("Accept") != req.headers.end()) {
+        vary_fields.push_back("Accept");
+    }
+    if (req.headers.find("Accept-Encoding") != req.headers.end()) {
+        vary_fields.push_back("Accept-Encoding");
+    }
+    if (req.headers.find("Accept-Language") != req.headers.end()) {
+        vary_fields.push_back("Accept-Language");
+    }
+    
+    add_vary_header(res, vary_fields);
+}
+
+std::string WebServer::get_preferred_content_type(const HttpRequest& req) {
+    std::vector<std::string> available_types = {"application/json", "application/xml", "text/html", "text/plain"};
+    return negotiate_content_type(req, available_types);
+}
+
+std::string WebServer::get_preferred_encoding(const HttpRequest& req) {
+    std::vector<std::string> available_encodings = {"gzip", "deflate", "identity"};
+    return negotiate_encoding(req, available_encodings);
+}
+
+std::string WebServer::get_preferred_language(const HttpRequest& req) {
+    std::vector<std::string> available_languages = {"en", "es", "fr", "de", "zh"};
+    return negotiate_language(req, available_languages);
+}
+
+bool WebServer::supports_content_type(const HttpRequest& req, const std::string& content_type) {
+    auto it = req.headers.find("Accept");
+    if (it == req.headers.end()) return true;
+    
+    auto quality_map = parse_quality_values(it->second);
+    return quality_map.find(content_type) != quality_map.end() || quality_map.find("*/*") != quality_map.end();
+}
+
+bool WebServer::supports_encoding(const HttpRequest& req, const std::string& encoding) {
+    auto it = req.headers.find("Accept-Encoding");
+    if (it == req.headers.end()) return true;
+    
+    auto quality_map = parse_quality_values(it->second);
+    return quality_map.find(encoding) != quality_map.end() || quality_map.find("*") != quality_map.end();
+}
+
+bool WebServer::supports_language(const HttpRequest& req, const std::string& language) {
+    auto it = req.headers.find("Accept-Language");
+    if (it == req.headers.end()) return true;
+    
+    auto quality_map = parse_quality_values(it->second);
+    return quality_map.find(language) != quality_map.end() || quality_map.find("*") != quality_map.end();
+}
+
+void WebServer::process_request_headers(const HttpRequest& req) {
+    std::lock_guard<std::mutex> lock(content_negotiation_mutex_);
+    
+    // Extract client preferences
+    std::string client_ip = extract_client_info(req);
+    std::vector<std::string> preferences;
+    
+    if (req.headers.find("Accept") != req.headers.end()) {
+        preferences.push_back("Accept: " + req.headers.at("Accept"));
+    }
+    if (req.headers.find("Accept-Encoding") != req.headers.end()) {
+        preferences.push_back("Accept-Encoding: " + req.headers.at("Accept-Encoding"));
+    }
+    if (req.headers.find("Accept-Language") != req.headers.end()) {
+        preferences.push_back("Accept-Language: " + req.headers.at("Accept-Language"));
+    }
+    
+    client_preferences_[client_ip] = preferences;
+    
+    // Update statistics
+    content_negotiation_stats_["total_requests"]++;
+}
+
+void WebServer::validate_request_headers(const HttpRequest& req) {
+    // Validate required headers
+    for (const auto& header : req.headers) {
+        if (header.first.empty() || header.second.empty()) {
+            throw std::runtime_error("Invalid header: " + header.first);
+        }
+    }
+}
+
+void WebServer::normalize_request_headers(HttpRequest& req) {
+    // Normalize header names to lowercase
+    std::map<std::string, std::string> normalized_headers;
+    for (const auto& header : req.headers) {
+        std::string key = header.first;
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        normalized_headers[key] = header.second;
+    }
+    req.headers = normalized_headers;
+}
+
+std::string WebServer::extract_client_info(const HttpRequest& req) {
+    auto it = req.headers.find("x-forwarded-for");
+    if (it != req.headers.end()) {
+        return it->second;
+    }
+    
+    it = req.headers.find("x-real-ip");
+    if (it != req.headers.end()) {
+        return it->second;
+    }
+    
+    return "unknown";
+}
+
+void WebServer::log_request_details(const HttpRequest& req) {
+    std::lock_guard<std::mutex> lock(content_negotiation_mutex_);
+    
+    std::string client_info = extract_client_info(req);
+    std::cout << "📝 Request from " << client_info << ":" << std::endl;
+    std::cout << "   Method: " << req.method << std::endl;
+    std::cout << "   Path: " << req.path << std::endl;
+    std::cout << "   Content-Type: " << get_preferred_content_type(req) << std::endl;
+    std::cout << "   Encoding: " << get_preferred_encoding(req) << std::endl;
+    std::cout << "   Language: " << get_preferred_language(req) << std::endl;
+}
+
+HttpResponse WebServer::handle_content_negotiation_test(const HttpRequest& req, HttpResponse& res) {
+    process_request_headers(req);
+    
+    res.status_code = 200;
+    res.status_text = "OK";
+    
+    // Determine content type based on negotiation
+    std::string content_type = get_preferred_content_type(req);
+    res.headers["Content-Type"] = content_type;
+    
+    // Add content negotiation headers
+    add_content_negotiation_headers(res, req);
+    
+    // Create response based on negotiated content type
+    if (content_type == "application/json") {
+        res.body = "{\"message\":\"Content negotiation test\",\"content_type\":\"" + content_type + "\"}";
+    } else if (content_type == "application/xml") {
+        res.body = "<?xml version=\"1.0\"?><response><message>Content negotiation test</message><content_type>" + content_type + "</content_type></response>";
+    } else if (content_type == "text/html") {
+        res.body = "<html><body><h1>Content Negotiation Test</h1><p>Content-Type: " + content_type + "</p></body></html>";
+    } else {
+        res.body = "Content negotiation test\nContent-Type: " + content_type;
+    }
+    
     return res;
 }
 

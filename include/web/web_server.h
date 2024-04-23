@@ -149,6 +149,21 @@ private:
     std::mutex security_mutex_;
     std::string security_log_file_;
 
+    // Content negotiation and request processing members
+    std::vector<std::string> supported_content_types_;
+    std::vector<std::string> supported_encodings_;
+    std::vector<std::string> supported_languages_;
+    std::map<std::string, std::string> content_type_aliases_;
+    std::map<std::string, std::string> encoding_aliases_;
+    std::map<std::string, std::string> language_aliases_;
+    std::map<std::string, size_t> content_negotiation_stats_;
+    std::map<std::string, std::vector<std::string>> client_preferences_;
+    std::mutex content_negotiation_mutex_;
+    bool content_negotiation_enabled_;
+    std::string default_content_type_;
+    std::string default_encoding_;
+    std::string default_language_;
+
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
     ~WebServer();
@@ -232,6 +247,28 @@ public:
     void restart_failed_components();
     HttpResponse handle_error_status(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_health_check(const HttpRequest& req, HttpResponse& res);
+
+    // Advanced request processing and content negotiation methods
+    std::string negotiate_content_type(const HttpRequest& req, const std::vector<std::string>& available_types);
+    std::string negotiate_encoding(const HttpRequest& req, const std::vector<std::string>& available_encodings);
+    std::string negotiate_language(const HttpRequest& req, const std::vector<std::string>& available_languages);
+    std::string parse_accept_header(const std::string& accept_header, const std::vector<std::string>& available_options);
+    std::map<std::string, double> parse_quality_values(const std::string& header_value);
+    std::string select_best_match(const std::map<std::string, double>& quality_map, const std::vector<std::string>& available_options);
+    void add_vary_header(HttpResponse& res, const std::vector<std::string>& vary_fields);
+    void add_content_negotiation_headers(HttpResponse& res, const HttpRequest& req);
+    std::string get_preferred_content_type(const HttpRequest& req);
+    std::string get_preferred_encoding(const HttpRequest& req);
+    std::string get_preferred_language(const HttpRequest& req);
+    bool supports_content_type(const HttpRequest& req, const std::string& content_type);
+    bool supports_encoding(const HttpRequest& req, const std::string& encoding);
+    bool supports_language(const HttpRequest& req, const std::string& language);
+    void process_request_headers(const HttpRequest& req);
+    void validate_request_headers(const HttpRequest& req);
+    void normalize_request_headers(HttpRequest& req);
+    std::string extract_client_info(const HttpRequest& req);
+    void log_request_details(const HttpRequest& req);
+    HttpResponse handle_content_negotiation_test(const HttpRequest& req, HttpResponse& res);
 
     // Security methods
     std::string sanitize_input(const std::string& input);
