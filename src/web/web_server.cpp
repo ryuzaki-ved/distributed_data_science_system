@@ -57,8 +57,11 @@ WebServer::WebServer(int port, const std::string& host)
                                                           api_documentation_enabled_(true), swagger_ui_enabled_(true),
                                                           api_version_("1.0.0"), api_title_("Distributed Data Science System API"),
                                                           api_description_("A comprehensive API for distributed data science operations including job management, HDFS operations, and machine learning algorithms"),
-                                                          api_contact_email_("admin@dds-system.com"), api_license_name_("MIT"),
-                                                          api_license_url_("https://opensource.org/licenses/MIT") {
+                                                          api_contact_email_("admin@dds-system.com"),                                                            api_license_name_("MIT"),
+                                                           api_license_url_("https://opensource.org/licenses/MIT"),
+                                                           websocket_enabled_(true), realtime_enabled_(true),
+                                                           websocket_cleanup_running_(false), websocket_heartbeat_interval_(std::chrono::seconds(30)),
+                                                           websocket_timeout_(std::chrono::seconds(300)), websocket_message_running_(false) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -79,6 +82,8 @@ WebServer::WebServer(int port, const std::string& host)
         std::cout << "🔑 Authentication: " << (authentication_enabled_ ? "Enabled" : "Disabled") << " (max sessions: " << max_sessions_per_user_ << ")" << std::endl;
         std::cout << "📚 API Documentation: " << (api_documentation_enabled_ ? "Enabled" : "Disabled") << " (version: " << api_version_ << ")" << std::endl;
         std::cout << "🔍 Swagger UI: " << (swagger_ui_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "🔌 WebSocket: " << (websocket_enabled_ ? "Enabled" : "Disabled") << " (heartbeat: " << websocket_heartbeat_interval_.count() << "s)" << std::endl;
+        std::cout << "⚡ Real-time: " << (realtime_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
@@ -87,6 +92,9 @@ WebServer::WebServer(int port, const std::string& host)
     
     // Initialize API documentation
     initialize_api_documentation();
+    
+    // Initialize WebSocket system
+    initialize_websocket_system();
     
     // Pre-compress static content
     pre_compress_static_content();
@@ -325,6 +333,22 @@ void WebServer::initialize_default_routes() {
 
         add_get_route("/api/docs/endpoints", [this](const HttpRequest& req, HttpResponse& res) {
             return handle_endpoint_docs(req, res);
+        });
+
+        // WebSocket and real-time communication endpoints
+        add_get_route("/api/websocket/status", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_websocket_status(req, res);
+        });
+
+        add_get_route("/api/websocket/test", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_websocket_test(req, res);
+        });
+
+        add_get_route("/ws", [this](const HttpRequest& req, HttpResponse& res) {
+            if (is_websocket_request(req)) {
+                return handle_websocket_upgrade(req, res);
+            }
+            return res;
         });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
@@ -1012,6 +1036,9 @@ void WebServer::print_analytics() {
         std::cout << "   API Documentation: " << (api_documentation_enabled_ ? "Enabled" : "Disabled") << std::endl;
         std::cout << "   Documentation Requests: " << documentation_stats_["total_requests"] << std::endl;
         std::cout << "   Swagger UI: " << (swagger_ui_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "   WebSocket: " << (websocket_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "   Active WebSocket Connections: " << websocket_stats_["active_connections"] << std::endl;
+        std::cout << "   WebSocket Messages: " << websocket_stats_["messages_received"] << " received, " << websocket_stats_["messages_sent"] << " sent" << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
     std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
@@ -4938,6 +4965,553 @@ void WebServer::reset_documentation_stats() {
     documentation_stats_["openapi_requests"] = 0;
     documentation_stats_["swagger_requests"] = 0;
     documentation_stats_["html_requests"] = 0;
+}
+
+// WebSocket and Real-time Communication Methods
+
+void WebServer::enable_websocket(bool enabled) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_enabled_ = enabled;
+    std::cout << "🔌 WebSocket " << (enabled ? "enabled" : "disabled") << std::endl;
+}
+
+void WebServer::enable_realtime(bool enabled) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    realtime_enabled_ = enabled;
+    std::cout << "⚡ Real-time " << (enabled ? "enabled" : "disabled") << std::endl;
+}
+
+bool WebServer::is_websocket_request(const HttpRequest& req) {
+    auto upgrade_it = req.headers.find("Upgrade");
+    auto connection_it = req.headers.find("Connection");
+    auto key_it = req.headers.find("Sec-WebSocket-Key");
+    
+    return upgrade_it != req.headers.end() && 
+           upgrade_it->second == "websocket" &&
+           connection_it != req.headers.end() && 
+           connection_it->second.find("Upgrade") != std::string::npos &&
+           key_it != req.headers.end() && !key_it->second.empty();
+}
+
+std::string WebServer::generate_websocket_accept_key(const std::string& client_key) {
+    const std::string websocket_guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    std::string concatenated = client_key + websocket_guid;
+    
+    // Simple SHA-1 implementation (in production, use a proper crypto library)
+    // For now, return a mock key
+    return "mock_accept_key_" + client_key.substr(0, 8);
+}
+
+HttpResponse WebServer::handle_websocket_upgrade(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_stats_["upgrade_requests"]++;
+    
+    auto key_it = req.headers.find("Sec-WebSocket-Key");
+    if (key_it == req.headers.end()) {
+        res.status_code = 400;
+        res.body = "Missing Sec-WebSocket-Key header";
+        return res;
+    }
+    
+    std::string accept_key = generate_websocket_accept_key(key_it->second);
+    
+    res.status_code = 101;
+    res.headers["Upgrade"] = "websocket";
+    res.headers["Connection"] = "Upgrade";
+    res.headers["Sec-WebSocket-Accept"] = accept_key;
+    res.headers["Sec-WebSocket-Protocol"] = "dds-protocol";
+    
+    std::cout << "🔌 WebSocket upgrade request handled" << std::endl;
+    return res;
+}
+
+void WebServer::handle_websocket_connection(int client_socket, const std::string& connection_id) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_connections_[connection_id] = client_socket;
+    websocket_last_activity_[connection_id] = std::chrono::steady_clock::now();
+    websocket_stats_["active_connections"]++;
+    
+    std::cout << "🔌 WebSocket connection established: " << connection_id << std::endl;
+    
+    // Start message processing loop
+    while (is_websocket_connection_active(connection_id)) {
+        char buffer[1024];
+        int bytes_received = recv(client_socket, buffer, sizeof(buffer) - 1, 0);
+        
+        if (bytes_received <= 0) {
+            break;
+        }
+        
+        buffer[bytes_received] = '\0';
+        std::string frame(buffer, bytes_received);
+        
+        if (is_websocket_frame_complete(frame)) {
+            std::string message = decode_websocket_frame(frame);
+            process_websocket_message(connection_id, message);
+            update_websocket_activity(connection_id);
+        }
+    }
+    
+    close_websocket_connection(connection_id);
+}
+
+void WebServer::process_websocket_message(const std::string& connection_id, const std::string& message) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_stats_["messages_received"]++;
+    
+    // Parse JSON message
+    try {
+        // Simple message format: {"type": "event", "data": "payload"}
+        if (message.find("\"type\"") != std::string::npos) {
+            std::string event_type = "message"; // Extract from JSON
+            auto handler_it = websocket_handlers_.find(event_type);
+            if (handler_it != websocket_handlers_.end()) {
+                handler_it->second(message);
+            }
+        }
+        
+        // Echo message back for testing
+        send_websocket_message(connection_id, "{\"type\": \"echo\", \"data\": \"" + message + "\"}");
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error processing WebSocket message: " << e.what() << std::endl;
+    }
+}
+
+void WebServer::broadcast_websocket_message(const std::string& message, const std::string& room) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    if (room.empty()) {
+        // Broadcast to all connections
+        for (const auto& connection : websocket_connections_) {
+            send_websocket_message(connection.first, message);
+        }
+    } else {
+        // Broadcast to room members
+        auto room_it = websocket_rooms_.find(room);
+        if (room_it != websocket_rooms_.end()) {
+            for (const auto& connection_id : room_it->second) {
+                send_websocket_message(connection_id, message);
+            }
+        }
+    }
+    
+    websocket_stats_["messages_sent"]++;
+}
+
+void WebServer::send_websocket_message(const std::string& connection_id, const std::string& message) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    auto connection_it = websocket_connections_.find(connection_id);
+    if (connection_it == websocket_connections_.end()) {
+        return;
+    }
+    
+    std::string frame = encode_websocket_frame(message);
+    int client_socket = connection_it->second;
+    
+    send(client_socket, frame.c_str(), frame.length(), 0);
+    websocket_stats_["messages_sent"]++;
+}
+
+void WebServer::join_websocket_room(const std::string& connection_id, const std::string& room) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_rooms_[room].push_back(connection_id);
+    std::cout << "🔌 Connection " << connection_id << " joined room: " << room << std::endl;
+}
+
+void WebServer::leave_websocket_room(const std::string& connection_id, const std::string& room) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    auto room_it = websocket_rooms_.find(room);
+    if (room_it != websocket_rooms_.end()) {
+        auto& members = room_it->second;
+        members.erase(std::remove(members.begin(), members.end(), connection_id), members.end());
+        
+        if (members.empty()) {
+            websocket_rooms_.erase(room_it);
+        }
+    }
+}
+
+void WebServer::close_websocket_connection(const std::string& connection_id) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    auto connection_it = websocket_connections_.find(connection_id);
+    if (connection_it != websocket_connections_.end()) {
+        close(connection_it->second);
+        websocket_connections_.erase(connection_it);
+        websocket_last_activity_.erase(connection_id);
+        websocket_stats_["active_connections"]--;
+        
+        // Remove from all rooms
+        for (auto& room : websocket_rooms_) {
+            room.second.erase(std::remove(room.second.begin(), room.second.end(), connection_id), room.second.end());
+        }
+        
+        std::cout << "🔌 WebSocket connection closed: " << connection_id << std::endl;
+    }
+}
+
+void WebServer::cleanup_inactive_websocket_connections() {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    auto now = std::chrono::steady_clock::now();
+    std::vector<std::string> inactive_connections;
+    
+    for (const auto& activity : websocket_last_activity_) {
+        if (now - activity.second > websocket_timeout_) {
+            inactive_connections.push_back(activity.first);
+        }
+    }
+    
+    for (const auto& connection_id : inactive_connections) {
+        close_websocket_connection(connection_id);
+    }
+    
+    if (!inactive_connections.empty()) {
+        std::cout << "🧹 Cleaned up " << inactive_connections.size() << " inactive WebSocket connections" << std::endl;
+    }
+}
+
+void WebServer::start_websocket_cleanup_thread() {
+    websocket_cleanup_running_ = true;
+    websocket_cleanup_thread_ = std::thread([this]() {
+        while (websocket_cleanup_running_) {
+            cleanup_inactive_websocket_connections();
+            std::this_thread::sleep_for(websocket_heartbeat_interval_);
+        }
+    });
+}
+
+void WebServer::stop_websocket_cleanup_thread() {
+    websocket_cleanup_running_ = false;
+    if (websocket_cleanup_thread_.joinable()) {
+        websocket_cleanup_thread_.join();
+    }
+}
+
+void WebServer::start_websocket_message_thread() {
+    websocket_message_running_ = true;
+    websocket_message_thread_ = std::thread([this]() {
+        while (websocket_message_running_) {
+            process_websocket_message_queue();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    });
+}
+
+void WebServer::stop_websocket_message_thread() {
+    websocket_message_running_ = false;
+    if (websocket_message_thread_.joinable()) {
+        websocket_message_thread_.join();
+    }
+}
+
+void WebServer::process_websocket_message_queue() {
+    std::unique_lock<std::mutex> lock(websocket_queue_mutex_);
+    
+    while (!websocket_message_queue_.empty()) {
+        std::string message = websocket_message_queue_.front();
+        websocket_message_queue_.pop();
+        lock.unlock();
+        
+        // Process message
+        broadcast_websocket_message(message);
+        
+        lock.lock();
+    }
+}
+
+std::string WebServer::encode_websocket_frame(const std::string& payload, uint8_t opcode) {
+    std::string frame;
+    
+    // First byte: FIN + RSV + Opcode
+    frame.push_back(0x80 | opcode);
+    
+    // Second byte: MASK + Payload length
+    size_t payload_length = payload.length();
+    if (payload_length < 126) {
+        frame.push_back(static_cast<char>(payload_length));
+    } else if (payload_length < 65536) {
+        frame.push_back(126);
+        frame.push_back((payload_length >> 8) & 0xFF);
+        frame.push_back(payload_length & 0xFF);
+    } else {
+        frame.push_back(127);
+        for (int i = 7; i >= 0; --i) {
+            frame.push_back((payload_length >> (i * 8)) & 0xFF);
+        }
+    }
+    
+    // Payload
+    frame += payload;
+    
+    return frame;
+}
+
+std::string WebServer::decode_websocket_frame(const std::string& frame) {
+    if (frame.length() < 2) {
+        return "";
+    }
+    
+    // Extract payload length
+    size_t payload_length = frame[1] & 0x7F;
+    size_t header_length = 2;
+    
+    if (payload_length == 126) {
+        if (frame.length() < 4) return "";
+        payload_length = (static_cast<unsigned char>(frame[2]) << 8) | static_cast<unsigned char>(frame[3]);
+        header_length = 4;
+    } else if (payload_length == 127) {
+        if (frame.length() < 10) return "";
+        payload_length = 0;
+        for (int i = 0; i < 8; ++i) {
+            payload_length = (payload_length << 8) | static_cast<unsigned char>(frame[2 + i]);
+        }
+        header_length = 10;
+    }
+    
+    // Extract payload
+    if (frame.length() < header_length + payload_length) {
+        return "";
+    }
+    
+    return frame.substr(header_length, payload_length);
+}
+
+bool WebServer::is_websocket_frame_complete(const std::string& frame) {
+    if (frame.length() < 2) return false;
+    
+    size_t payload_length = frame[1] & 0x7F;
+    size_t header_length = 2;
+    
+    if (payload_length == 126) {
+        if (frame.length() < 4) return false;
+        payload_length = (static_cast<unsigned char>(frame[2]) << 8) | static_cast<unsigned char>(frame[3]);
+        header_length = 4;
+    } else if (payload_length == 127) {
+        if (frame.length() < 10) return false;
+        payload_length = 0;
+        for (int i = 0; i < 8; ++i) {
+            payload_length = (payload_length << 8) | static_cast<unsigned char>(frame[2 + i]);
+        }
+        header_length = 10;
+    }
+    
+    return frame.length() >= header_length + payload_length;
+}
+
+uint8_t WebServer::get_websocket_opcode(const std::string& frame) {
+    if (frame.empty()) return 0;
+    return frame[0] & 0x0F;
+}
+
+std::string WebServer::get_websocket_payload(const std::string& frame) {
+    return decode_websocket_frame(frame);
+}
+
+void WebServer::send_websocket_heartbeat(const std::string& connection_id) {
+    std::string ping_frame = encode_websocket_frame("", 0x09); // Ping opcode
+    send_websocket_message(connection_id, ping_frame);
+}
+
+void WebServer::update_websocket_activity(const std::string& connection_id) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_last_activity_[connection_id] = std::chrono::steady_clock::now();
+}
+
+bool WebServer::is_websocket_connection_active(const std::string& connection_id) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    return websocket_connections_.find(connection_id) != websocket_connections_.end();
+}
+
+size_t WebServer::get_websocket_connection_count() {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    return websocket_connections_.size();
+}
+
+size_t WebServer::get_websocket_room_count(const std::string& room) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    auto room_it = websocket_rooms_.find(room);
+    return room_it != websocket_rooms_.end() ? room_it->second.size() : 0;
+}
+
+std::vector<std::string> WebServer::get_websocket_connections_in_room(const std::string& room) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    auto room_it = websocket_rooms_.find(room);
+    return room_it != websocket_rooms_.end() ? room_it->second : std::vector<std::string>();
+}
+
+void WebServer::add_websocket_message_handler(const std::string& event_type, std::function<void(const std::string&, const std::string&)> handler) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_handlers_[event_type] = [handler](const std::string& message) {
+        handler(event_type, message);
+    };
+}
+
+void WebServer::remove_websocket_message_handler(const std::string& event_type) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    websocket_handlers_.erase(event_type);
+}
+
+HttpResponse WebServer::handle_websocket_status(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    std::string json = "{\n";
+    json += "  \"websocket_enabled\": " + std::string(websocket_enabled_ ? "true" : "false") + ",\n";
+    json += "  \"realtime_enabled\": " + std::string(realtime_enabled_ ? "true" : "false") + ",\n";
+    json += "  \"active_connections\": " + std::to_string(websocket_connections_.size()) + ",\n";
+    json += "  \"total_rooms\": " + std::to_string(websocket_rooms_.size()) + ",\n";
+    json += "  \"messages_received\": " + std::to_string(websocket_stats_["messages_received"]) + ",\n";
+    json += "  \"messages_sent\": " + std::to_string(websocket_stats_["messages_sent"]) + ",\n";
+    json += "  \"upgrade_requests\": " + std::to_string(websocket_stats_["upgrade_requests"]) + "\n";
+    json += "}\n";
+    
+    res.body = json;
+    return res;
+}
+
+HttpResponse WebServer::handle_websocket_test(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.headers["Content-Type"] = "text/html";
+    
+    std::string html = R"(
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background: #d4edda; color: #155724; }
+        .disconnected { background: #f8d7da; color: #721c24; }
+        .message { background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 3px; }
+        input, button { padding: 8px; margin: 5px; }
+        #messages { height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebSocket Test Client</h1>
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div>
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+            <button onclick="sendMessage()">Send Message</button>
+        </div>
+        
+        <div>
+            <input type="text" id="messageInput" placeholder="Enter message..." style="width: 300px;">
+        </div>
+        
+        <h3>Messages:</h3>
+        <div id="messages"></div>
+    </div>
+
+    <script>
+        let ws = null;
+        
+        function connect() {
+            ws = new WebSocket('ws://localhost:8080/ws');
+            
+            ws.onopen = function() {
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'status connected';
+                addMessage('System: Connected to WebSocket server');
+            };
+            
+            ws.onmessage = function(event) {
+                addMessage('Received: ' + event.data);
+            };
+            
+            ws.onclose = function() {
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status disconnected';
+                addMessage('System: Disconnected from WebSocket server');
+            };
+            
+            ws.onerror = function(error) {
+                addMessage('Error: ' + error);
+            };
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+        
+        function sendMessage() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = document.getElementById('messageInput').value;
+                if (message) {
+                    ws.send(JSON.stringify({type: 'message', data: message}));
+                    addMessage('Sent: ' + message);
+                    document.getElementById('messageInput').value = '';
+                }
+            }
+        }
+        
+        function addMessage(text) {
+            const messages = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.textContent = text;
+            messages.appendChild(messageDiv);
+            messages.scrollTop = messages.scrollHeight;
+        }
+        
+        // Auto-connect on page load
+        window.onload = function() {
+            connect();
+        };
+    </script>
+</body>
+</html>
+    )";
+    
+    res.body = html;
+    return res;
+}
+
+void WebServer::initialize_websocket_system() {
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    // Initialize WebSocket statistics
+    websocket_stats_["active_connections"] = 0;
+    websocket_stats_["messages_received"] = 0;
+    websocket_stats_["messages_sent"] = 0;
+    websocket_stats_["upgrade_requests"] = 0;
+    
+    // Start background threads
+    start_websocket_cleanup_thread();
+    start_websocket_message_thread();
+    
+    std::cout << "🔌 WebSocket system initialized" << std::endl;
+}
+
+void WebServer::cleanup_websocket_resources() {
+    stop_websocket_cleanup_thread();
+    stop_websocket_message_thread();
+    
+    std::lock_guard<std::mutex> lock(websocket_mutex_);
+    
+    // Close all connections
+    for (const auto& connection : websocket_connections_) {
+        close(connection.second);
+    }
+    websocket_connections_.clear();
+    websocket_rooms_.clear();
+    websocket_last_activity_.clear();
+    
+    std::cout << "🔌 WebSocket resources cleaned up" << std::endl;
 }
 
 } // namespace web

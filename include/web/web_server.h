@@ -224,6 +224,28 @@ private:
     std::map<std::string, std::map<std::string, std::string>> endpoint_schemas_;
     std::mutex documentation_mutex_;
     std::map<std::string, size_t> documentation_stats_;
+    
+    // WebSocket and real-time communication members
+    bool websocket_enabled_;
+    bool realtime_enabled_;
+    std::map<std::string, int> websocket_connections_;
+    std::map<std::string, std::function<void(const std::string&)>> websocket_handlers_;
+    std::map<std::string, std::vector<std::string>> websocket_rooms_;
+    std::map<std::string, std::string> websocket_user_map_;
+    std::map<std::string, size_t> websocket_stats_;
+    std::mutex websocket_mutex_;
+    std::thread websocket_cleanup_thread_;
+    std::atomic<bool> websocket_cleanup_running_;
+    std::chrono::seconds websocket_heartbeat_interval_;
+    std::chrono::seconds websocket_timeout_;
+    std::string websocket_upgrade_header_;
+    std::string websocket_accept_key_;
+    std::map<std::string, std::chrono::steady_clock::time_point> websocket_last_activity_;
+    std::queue<std::string> websocket_message_queue_;
+    std::mutex websocket_queue_mutex_;
+    std::condition_variable websocket_queue_cv_;
+    std::thread websocket_message_thread_;
+    std::atomic<bool> websocket_message_running_;
 
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
@@ -402,6 +424,43 @@ public:
     void export_documentation(const std::string& format, const std::string& file_path);
     size_t get_documentation_requests();
     void reset_documentation_stats();
+    
+    // WebSocket and real-time communication methods
+    void enable_websocket(bool enabled = true);
+    void enable_realtime(bool enabled = true);
+    bool is_websocket_request(const HttpRequest& req);
+    std::string generate_websocket_accept_key(const std::string& client_key);
+    HttpResponse handle_websocket_upgrade(const HttpRequest& req, HttpResponse& res);
+    void handle_websocket_connection(int client_socket, const std::string& connection_id);
+    void process_websocket_message(const std::string& connection_id, const std::string& message);
+    void broadcast_websocket_message(const std::string& message, const std::string& room = "");
+    void send_websocket_message(const std::string& connection_id, const std::string& message);
+    void join_websocket_room(const std::string& connection_id, const std::string& room);
+    void leave_websocket_room(const std::string& connection_id, const std::string& room);
+    void close_websocket_connection(const std::string& connection_id);
+    void cleanup_inactive_websocket_connections();
+    void start_websocket_cleanup_thread();
+    void stop_websocket_cleanup_thread();
+    void start_websocket_message_thread();
+    void stop_websocket_message_thread();
+    void process_websocket_message_queue();
+    std::string encode_websocket_frame(const std::string& payload, uint8_t opcode = 0x01);
+    std::string decode_websocket_frame(const std::string& frame);
+    bool is_websocket_frame_complete(const std::string& frame);
+    uint8_t get_websocket_opcode(const std::string& frame);
+    std::string get_websocket_payload(const std::string& frame);
+    void send_websocket_heartbeat(const std::string& connection_id);
+    void update_websocket_activity(const std::string& connection_id);
+    bool is_websocket_connection_active(const std::string& connection_id);
+    size_t get_websocket_connection_count();
+    size_t get_websocket_room_count(const std::string& room);
+    std::vector<std::string> get_websocket_connections_in_room(const std::string& room);
+    void add_websocket_message_handler(const std::string& event_type, std::function<void(const std::string&, const std::string&)> handler);
+    void remove_websocket_message_handler(const std::string& event_type);
+    HttpResponse handle_websocket_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_websocket_test(const HttpRequest& req, HttpResponse& res);
+    void initialize_websocket_system();
+    void cleanup_websocket_resources();
     
     // Security methods
     std::string sanitize_input(const std::string& input);
