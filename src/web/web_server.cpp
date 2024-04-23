@@ -47,8 +47,13 @@ WebServer::WebServer(int port, const std::string& host)
                                                                   server_healthy_(true), consecutive_errors_(0), total_errors_(0),
                                   last_health_check_(std::chrono::steady_clock::now()), health_check_interval_(std::chrono::seconds(30)),
                                   error_log_file_("error.log"), auto_recovery_enabled_(true),
-                                  content_negotiation_enabled_(true), default_content_type_("application/json"),
-                                  default_encoding_("identity"), default_language_("en") {
+                                                                                            content_negotiation_enabled_(true), default_content_type_("application/json"),
+                                                          default_encoding_("identity"), default_language_("en"),
+                                                          session_management_enabled_(true), authentication_enabled_(true),
+                                                          session_timeout_(std::chrono::seconds(3600)), token_expiry_(std::chrono::seconds(7200)),
+                                                          jwt_secret_("your-secret-key-change-in-production"), session_cookie_name_("session_id"),
+                                                          auth_cookie_name_("auth_token"), max_sessions_per_user_(5), max_failed_attempts_(5),
+                                                          lockout_duration_(std::chrono::seconds(900)) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -63,8 +68,10 @@ WebServer::WebServer(int port, const std::string& host)
                     std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
                                                         std::cout << "🛡️ Security features: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
                                     std::cout << "🧠 Intelligent caching: " << (intelligent_caching_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_cache_size_ << " entries, TTL: " << cache_ttl_.count() << "s)" << std::endl;
-                                    std::cout << "🔄 Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << " (health check: " << health_check_interval_.count() << "s)" << std::endl;
-                                    std::cout << "🤝 Content negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << " (default: " << default_content_type_ << ")" << std::endl;
+                                            std::cout << "🔄 Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << " (health check: " << health_check_interval_.count() << "s)" << std::endl;
+        std::cout << "🤝 Content negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << " (default: " << default_content_type_ << ")" << std::endl;
+        std::cout << "🔐 Session management: " << (session_management_enabled_ ? "Enabled" : "Disabled") << " (timeout: " << session_timeout_.count() << "s)" << std::endl;
+        std::cout << "🔑 Authentication: " << (authentication_enabled_ ? "Enabled" : "Disabled") << " (max sessions: " << max_sessions_per_user_ << ")" << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
@@ -251,10 +258,39 @@ void WebServer::initialize_default_routes() {
                                     return handle_error_status(req, res);
                                 });
 
-                                // Content negotiation endpoints
-                                add_get_route("/api/negotiation/test", [this](const HttpRequest& req, HttpResponse& res) {
-                                    return handle_content_negotiation_test(req, res);
-                                });
+                                        // Content negotiation endpoints
+        add_get_route("/api/negotiation/test", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_content_negotiation_test(req, res);
+        });
+
+        // Authentication and session management endpoints
+        add_post_route("/api/auth/login", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_login(req, res);
+        });
+
+        add_post_route("/api/auth/logout", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_logout(req, res);
+        });
+
+        add_post_route("/api/auth/register", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_register(req, res);
+        });
+
+        add_get_route("/api/auth/session", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_session_status(req, res);
+        });
+
+        add_get_route("/api/auth/profile", [this](const HttpRequest& req, HttpResponse& res) {
+            return require_authentication(req, res, [this](const HttpRequest& req, HttpResponse& res) {
+                return handle_user_profile(req, res);
+            });
+        });
+
+        add_post_route("/api/auth/change-password", [this](const HttpRequest& req, HttpResponse& res) {
+            return require_authentication(req, res, [this](const HttpRequest& req, HttpResponse& res) {
+                return handle_change_password(req, res);
+            });
+        });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
 }
@@ -928,9 +964,16 @@ void WebServer::print_analytics() {
                                     std::cout << "   Cache Hits: " << cache_hits_ << ", Misses: " << cache_misses_ << std::endl;
                                     std::cout << "   Server Health: " << (server_healthy_ ? "Healthy" : "Unhealthy") << std::endl;
                                     std::cout << "   Total Errors: " << total_errors_ << ", Consecutive: " << consecutive_errors_ << std::endl;
-                                    std::cout << "   Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << std::endl;
-                                    std::cout << "   Content Negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << std::endl;
-                                    std::cout << "   Negotiation Requests: " << content_negotiation_stats_["total_requests"] << std::endl;
+                                            std::cout << "   Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "   Content Negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "   Negotiation Requests: " << content_negotiation_stats_["total_requests"] << std::endl;
+        std::cout << "   Session Management: " << (session_management_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "   Active Sessions: " << session_stats_["active_sessions"] << std::endl;
+        std::cout << "   Total Sessions: " << session_stats_["total_sessions"] << std::endl;
+        std::cout << "   Authentication: " << (authentication_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "   Successful Logins: " << authentication_stats_["successful_logins"] << std::endl;
+        std::cout << "   Failed Logins: " << authentication_stats_["failed_logins"] << std::endl;
+        std::cout << "   Registered Users: " << authentication_stats_["registered_users"] << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
     std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
@@ -3627,6 +3670,578 @@ HttpResponse WebServer::handle_content_negotiation_test(const HttpRequest& req, 
     }
     
     return res;
+}
+
+// Session management and authentication methods
+std::string WebServer::create_session(const std::string& username, const std::string& user_agent) {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    
+    // Generate unique session ID
+    std::string session_id = generate_secure_random_string(32);
+    
+    // Create session
+    Session session;
+    session.username = username;
+    session.user_agent = user_agent;
+    session.created_at = std::chrono::steady_clock::now();
+    session.last_activity = std::chrono::steady_clock::now();
+    session.is_active = true;
+    
+    active_sessions_[session_id] = session;
+    session_stats_["total_sessions"]++;
+    session_stats_["active_sessions"]++;
+    
+    return session_id;
+}
+
+bool WebServer::validate_session(const std::string& session_id) {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    
+    auto it = active_sessions_.find(session_id);
+    if (it == active_sessions_.end()) {
+        return false;
+    }
+    
+    Session& session = it->second;
+    auto now = std::chrono::steady_clock::now();
+    
+    // Check if session has expired
+    if (now - session.last_activity > session_timeout_) {
+        active_sessions_.erase(it);
+        session_stats_["active_sessions"]--;
+        session_stats_["expired_sessions"]++;
+        return false;
+    }
+    
+    // Update last activity
+    session.last_activity = now;
+    return session.is_active;
+}
+
+void WebServer::invalidate_session(const std::string& session_id) {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    
+    auto it = active_sessions_.find(session_id);
+    if (it != active_sessions_.end()) {
+        active_sessions_.erase(it);
+        session_stats_["active_sessions"]--;
+        session_stats_["invalidated_sessions"]++;
+    }
+}
+
+std::string WebServer::get_session_user(const std::string& session_id) {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    
+    auto it = active_sessions_.find(session_id);
+    if (it != active_sessions_.end()) {
+        return it->second.username;
+    }
+    return "";
+}
+
+void WebServer::update_session_activity(const std::string& session_id) {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    
+    auto it = active_sessions_.find(session_id);
+    if (it != active_sessions_.end()) {
+        it->second.last_activity = std::chrono::steady_clock::now();
+    }
+}
+
+void WebServer::cleanup_expired_sessions() {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    
+    auto now = std::chrono::steady_clock::now();
+    auto it = active_sessions_.begin();
+    
+    while (it != active_sessions_.end()) {
+        if (now - it->second.last_activity > session_timeout_) {
+            it = active_sessions_.erase(it);
+            session_stats_["active_sessions"]--;
+            session_stats_["expired_sessions"]++;
+        } else {
+            ++it;
+        }
+    }
+}
+
+std::string WebServer::generate_jwt_token(const std::string& username, const std::vector<std::string>& roles) {
+    // Simple JWT-like token generation (in production, use a proper JWT library)
+    std::string payload = username + "|" + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    
+    for (const auto& role : roles) {
+        payload += "|" + role;
+    }
+    
+    // Simple hash-based signature
+    std::hash<std::string> hasher;
+    std::string signature = std::to_string(hasher(payload + jwt_secret_));
+    
+    return payload + "." + signature;
+}
+
+bool WebServer::validate_jwt_token(const std::string& token, std::string& username) {
+    size_t dot_pos = token.find('.');
+    if (dot_pos == std::string::npos) {
+        return false;
+    }
+    
+    std::string payload = token.substr(0, dot_pos);
+    std::string signature = token.substr(dot_pos + 1);
+    
+    // Verify signature
+    std::hash<std::string> hasher;
+    std::string expected_signature = std::to_string(hasher(payload + jwt_secret_));
+    
+    if (signature != expected_signature) {
+        return false;
+    }
+    
+    // Extract username
+    size_t pipe_pos = payload.find('|');
+    if (pipe_pos == std::string::npos) {
+        return false;
+    }
+    
+    username = payload.substr(0, pipe_pos);
+    
+    // Check expiration
+    size_t timestamp_pos = payload.find('|', pipe_pos + 1);
+    if (timestamp_pos == std::string::npos) {
+        return false;
+    }
+    
+    std::string timestamp_str = payload.substr(pipe_pos + 1, timestamp_pos - pipe_pos - 1);
+    auto token_time = std::chrono::seconds(std::stoll(timestamp_str));
+    auto now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now().time_since_epoch());
+    
+    if (now - token_time > token_expiry_) {
+        return false;
+    }
+    
+    return true;
+}
+
+std::string WebServer::hash_password(const std::string& password) {
+    // Simple hash function (in production, use bcrypt or similar)
+    std::hash<std::string> hasher;
+    return std::to_string(hasher(password + "salt"));
+}
+
+bool WebServer::verify_password(const std::string& password, const std::string& hash) {
+    return hash_password(password) == hash;
+}
+
+bool WebServer::authenticate_user(const std::string& username, const std::string& password) {
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    
+    // Check if user is locked out
+    if (is_user_locked_out(username)) {
+        authentication_stats_["locked_out_attempts"]++;
+        return false;
+    }
+    
+    auto it = registered_users_.find(username);
+    if (it == registered_users_.end()) {
+        record_failed_login(username);
+        return false;
+    }
+    
+    if (verify_password(password, it->second.password_hash)) {
+        reset_failed_attempts(username);
+        it->second.last_login = std::chrono::steady_clock::now();
+        authentication_stats_["successful_logins"]++;
+        return true;
+    } else {
+        record_failed_login(username);
+        return false;
+    }
+}
+
+bool WebServer::register_user(const std::string& username, const std::string& password, const std::vector<std::string>& roles) {
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    
+    if (registered_users_.find(username) != registered_users_.end()) {
+        return false;
+    }
+    
+    User user;
+    user.username = username;
+    user.password_hash = hash_password(password);
+    user.roles = roles;
+    user.created_at = std::chrono::steady_clock::now();
+    user.failed_attempts = 0;
+    user.is_active = true;
+    
+    registered_users_[username] = user;
+    user_roles_[username] = roles;
+    
+    for (const auto& role : roles) {
+        if (role_permissions_.find(role) == role_permissions_.end()) {
+            role_permissions_[role] = {};
+        }
+    }
+    
+    authentication_stats_["registered_users"]++;
+    return true;
+}
+
+bool WebServer::has_permission(const std::string& username, const std::string& permission) {
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    
+    auto roles_it = user_roles_.find(username);
+    if (roles_it == user_roles_.end()) {
+        return false;
+    }
+    
+    for (const auto& role : roles_it->second) {
+        auto perms_it = role_permissions_.find(role);
+        if (perms_it != role_permissions_.end()) {
+            for (const auto& perm : perms_it->second) {
+                if (perm == permission) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
+std::vector<std::string> WebServer::get_user_roles(const std::string& username) {
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    
+    auto it = user_roles_.find(username);
+    if (it != user_roles_.end()) {
+        return it->second;
+    }
+    return {};
+}
+
+std::vector<std::string> WebServer::get_role_permissions(const std::string& role) {
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    
+    auto it = role_permissions_.find(role);
+    if (it != role_permissions_.end()) {
+        return it->second;
+    }
+    return {};
+}
+
+void WebServer::add_role_permission(const std::string& role, const std::string& permission) {
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    role_permissions_[role].push_back(permission);
+}
+
+void WebServer::remove_role_permission(const std::string& role, const std::string& permission) {
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    
+    auto it = role_permissions_.find(role);
+    if (it != role_permissions_.end()) {
+        auto& permissions = it->second;
+        permissions.erase(std::remove(permissions.begin(), permissions.end(), permission), permissions.end());
+    }
+}
+
+bool WebServer::is_user_locked_out(const std::string& username) {
+    auto it = registered_users_.find(username);
+    if (it == registered_users_.end()) {
+        return false;
+    }
+    
+    auto now = std::chrono::steady_clock::now();
+    return it->second.failed_attempts >= max_failed_attempts_ && 
+           now < it->second.lockout_until;
+}
+
+void WebServer::record_failed_login(const std::string& username) {
+    auto it = registered_users_.find(username);
+    if (it != registered_users_.end()) {
+        it->second.failed_attempts++;
+        if (it->second.failed_attempts >= max_failed_attempts_) {
+            it->second.lockout_until = std::chrono::steady_clock::now() + lockout_duration_;
+        }
+        authentication_stats_["failed_logins"]++;
+    }
+}
+
+void WebServer::reset_failed_attempts(const std::string& username) {
+    auto it = registered_users_.find(username);
+    if (it != registered_users_.end()) {
+        it->second.failed_attempts = 0;
+    }
+}
+
+std::string WebServer::extract_session_id(const HttpRequest& req) {
+    auto it = req.headers.find("cookie");
+    if (it == req.headers.end()) {
+        return "";
+    }
+    
+    std::string cookies = it->second;
+    std::string session_cookie = session_cookie_name_ + "=";
+    size_t pos = cookies.find(session_cookie);
+    
+    if (pos != std::string::npos) {
+        pos += session_cookie.length();
+        size_t end_pos = cookies.find(';', pos);
+        if (end_pos == std::string::npos) {
+            end_pos = cookies.length();
+        }
+        return cookies.substr(pos, end_pos - pos);
+    }
+    
+    return "";
+}
+
+void WebServer::add_session_cookie(HttpResponse& res, const std::string& session_id) {
+    res.headers["Set-Cookie"] = session_cookie_name_ + "=" + session_id + 
+                                "; HttpOnly; Path=/; Max-Age=" + std::to_string(session_timeout_.count());
+}
+
+void WebServer::add_auth_cookie(HttpResponse& res, const std::string& token) {
+    res.headers["Set-Cookie"] = auth_cookie_name_ + "=" + token + 
+                                "; HttpOnly; Path=/; Max-Age=" + std::to_string(token_expiry_.count());
+}
+
+HttpResponse WebServer::handle_login(const HttpRequest& req, HttpResponse& res) {
+    if (req.method != "POST") {
+        return handle_client_error(405, "Method not allowed", res);
+    }
+    
+    // Parse JSON body
+    std::string username, password;
+    try {
+        // Simple JSON parsing (in production, use a proper JSON library)
+        size_t user_pos = req.body.find("\"username\":\"");
+        size_t pass_pos = req.body.find("\"password\":\"");
+        
+        if (user_pos != std::string::npos && pass_pos != std::string::npos) {
+            user_pos += 12;
+            size_t user_end = req.body.find("\"", user_pos);
+            username = req.body.substr(user_pos, user_end - user_pos);
+            
+            pass_pos += 12;
+            size_t pass_end = req.body.find("\"", pass_pos);
+            password = req.body.substr(pass_pos, pass_end - pass_pos);
+        }
+    } catch (...) {
+        return handle_client_error(400, "Invalid JSON format", res);
+    }
+    
+    if (username.empty() || password.empty()) {
+        return handle_client_error(400, "Username and password required", res);
+    }
+    
+    if (authenticate_user(username, password)) {
+        std::string session_id = create_session(username, req.headers["user-agent"]);
+        std::vector<std::string> roles = get_user_roles(username);
+        std::string token = generate_jwt_token(username, roles);
+        
+        res.status_code = 200;
+        res.status_text = "OK";
+        res.headers["Content-Type"] = "application/json";
+        add_session_cookie(res, session_id);
+        add_auth_cookie(res, token);
+        
+        res.body = "{\"success\":true,\"message\":\"Login successful\",\"username\":\"" + username + "\"}";
+    } else {
+        res.status_code = 401;
+        res.status_text = "Unauthorized";
+        res.headers["Content-Type"] = "application/json";
+        res.body = "{\"success\":false,\"message\":\"Invalid credentials\"}";
+    }
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_logout(const HttpRequest& req, HttpResponse& res) {
+    std::string session_id = extract_session_id(req);
+    if (!session_id.empty()) {
+        invalidate_session(session_id);
+    }
+    
+    res.status_code = 200;
+    res.status_text = "OK";
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Set-Cookie"] = session_cookie_name_ + "=; HttpOnly; Path=/; Max-Age=0";
+    res.headers["Set-Cookie"] = auth_cookie_name_ + "=; HttpOnly; Path=/; Max-Age=0";
+    res.body = "{\"success\":true,\"message\":\"Logout successful\"}";
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_register(const HttpRequest& req, HttpResponse& res) {
+    if (req.method != "POST") {
+        return handle_client_error(405, "Method not allowed", res);
+    }
+    
+    // Parse JSON body
+    std::string username, password;
+    try {
+        size_t user_pos = req.body.find("\"username\":\"");
+        size_t pass_pos = req.body.find("\"password\":\"");
+        
+        if (user_pos != std::string::npos && pass_pos != std::string::npos) {
+            user_pos += 12;
+            size_t user_end = req.body.find("\"", user_pos);
+            username = req.body.substr(user_pos, user_end - user_pos);
+            
+            pass_pos += 12;
+            size_t pass_end = req.body.find("\"", pass_pos);
+            password = req.body.substr(pass_pos, pass_end - pass_pos);
+        }
+    } catch (...) {
+        return handle_client_error(400, "Invalid JSON format", res);
+    }
+    
+    if (username.empty() || password.empty()) {
+        return handle_client_error(400, "Username and password required", res);
+    }
+    
+    if (register_user(username, password, {"user"})) {
+        res.status_code = 201;
+        res.status_text = "Created";
+        res.headers["Content-Type"] = "application/json";
+        res.body = "{\"success\":true,\"message\":\"User registered successfully\"}";
+    } else {
+        res.status_code = 409;
+        res.status_text = "Conflict";
+        res.headers["Content-Type"] = "application/json";
+        res.body = "{\"success\":false,\"message\":\"Username already exists\"}";
+    }
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_session_status(const HttpRequest& req, HttpResponse& res) {
+    std::string session_id = extract_session_id(req);
+    
+    res.status_code = 200;
+    res.status_text = "OK";
+    res.headers["Content-Type"] = "application/json";
+    
+    if (!session_id.empty() && validate_session(session_id)) {
+        std::string username = get_session_user(session_id);
+        std::vector<std::string> roles = get_user_roles(username);
+        
+        res.body = "{\"authenticated\":true,\"username\":\"" + username + "\",\"roles\":" + 
+                   "[\"" + (roles.empty() ? "" : roles[0]) + "\"]}";
+    } else {
+        res.body = "{\"authenticated\":false}";
+    }
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_user_profile(const HttpRequest& req, HttpResponse& res) {
+    std::string session_id = extract_session_id(req);
+    if (session_id.empty() || !validate_session(session_id)) {
+        return handle_client_error(401, "Authentication required", res);
+    }
+    
+    std::string username = get_session_user(session_id);
+    std::vector<std::string> roles = get_user_roles(username);
+    
+    res.status_code = 200;
+    res.status_text = "OK";
+    res.headers["Content-Type"] = "application/json";
+    
+    std::string roles_json = "[";
+    for (size_t i = 0; i < roles.size(); ++i) {
+        if (i > 0) roles_json += ",";
+        roles_json += "\"" + roles[i] + "\"";
+    }
+    roles_json += "]";
+    
+    res.body = "{\"username\":\"" + username + "\",\"roles\":" + roles_json + "}";
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_change_password(const HttpRequest& req, HttpResponse& res) {
+    if (req.method != "POST") {
+        return handle_client_error(405, "Method not allowed", res);
+    }
+    
+    std::string session_id = extract_session_id(req);
+    if (session_id.empty() || !validate_session(session_id)) {
+        return handle_client_error(401, "Authentication required", res);
+    }
+    
+    std::string username = get_session_user(session_id);
+    
+    // Parse JSON body
+    std::string old_password, new_password;
+    try {
+        size_t old_pos = req.body.find("\"old_password\":\"");
+        size_t new_pos = req.body.find("\"new_password\":\"");
+        
+        if (old_pos != std::string::npos && new_pos != std::string::npos) {
+            old_pos += 16;
+            size_t old_end = req.body.find("\"", old_pos);
+            old_password = req.body.substr(old_pos, old_end - old_pos);
+            
+            new_pos += 16;
+            size_t new_end = req.body.find("\"", new_pos);
+            new_password = req.body.substr(new_pos, new_end - new_pos);
+        }
+    } catch (...) {
+        return handle_client_error(400, "Invalid JSON format", res);
+    }
+    
+    if (old_password.empty() || new_password.empty()) {
+        return handle_client_error(400, "Old and new passwords required", res);
+    }
+    
+    std::lock_guard<std::mutex> lock(user_mutex_);
+    auto it = registered_users_.find(username);
+    if (it == registered_users_.end()) {
+        return handle_client_error(404, "User not found", res);
+    }
+    
+    if (!verify_password(old_password, it->second.password_hash)) {
+        return handle_client_error(400, "Invalid old password", res);
+    }
+    
+    it->second.password_hash = hash_password(new_password);
+    
+    res.status_code = 200;
+    res.status_text = "OK";
+    res.headers["Content-Type"] = "application/json";
+    res.body = "{\"success\":true,\"message\":\"Password changed successfully\"}";
+    
+    return res;
+}
+
+HttpResponse WebServer::require_authentication(const HttpRequest& req, HttpResponse& res, 
+                                              const std::function<HttpResponse(const HttpRequest&, HttpResponse&)>& handler) {
+    std::string session_id = extract_session_id(req);
+    
+    if (session_id.empty() || !validate_session(session_id)) {
+        return handle_client_error(401, "Authentication required", res);
+    }
+    
+    return handler(req, res);
+}
+
+HttpResponse WebServer::require_permission(const HttpRequest& req, HttpResponse& res, 
+                                          const std::string& permission,
+                                          const std::function<HttpResponse(const HttpRequest&, HttpResponse&)>& handler) {
+    std::string session_id = extract_session_id(req);
+    
+    if (session_id.empty() || !validate_session(session_id)) {
+        return handle_client_error(401, "Authentication required", res);
+    }
+    
+    std::string username = get_session_user(session_id);
+    if (!has_permission(username, permission)) {
+        return handle_client_error(403, "Insufficient permissions", res);
+    }
+    
+    return handler(req, res);
 }
 
 } // namespace web

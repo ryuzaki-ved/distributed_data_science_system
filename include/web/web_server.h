@@ -164,6 +164,47 @@ private:
     std::string default_encoding_;
     std::string default_language_;
 
+    // Session and User data structures
+    struct Session {
+        std::string username;
+        std::string user_agent;
+        std::chrono::steady_clock::time_point created_at;
+        std::chrono::steady_clock::time_point last_activity;
+        std::map<std::string, std::string> data;
+        bool is_active;
+    };
+
+    struct User {
+        std::string username;
+        std::string password_hash;
+        std::vector<std::string> roles;
+        std::chrono::steady_clock::time_point created_at;
+        std::chrono::steady_clock::time_point last_login;
+        size_t failed_attempts;
+        std::chrono::steady_clock::time_point lockout_until;
+        bool is_active;
+    };
+
+    // Session management and authentication members
+    std::map<std::string, Session> active_sessions_;
+    std::map<std::string, User> registered_users_;
+    std::map<std::string, std::vector<std::string>> user_roles_;
+    std::map<std::string, std::vector<std::string>> role_permissions_;
+    std::map<std::string, size_t> session_stats_;
+    std::map<std::string, size_t> authentication_stats_;
+    std::mutex session_mutex_;
+    std::mutex user_mutex_;
+    bool session_management_enabled_;
+    bool authentication_enabled_;
+    std::chrono::seconds session_timeout_;
+    std::chrono::seconds token_expiry_;
+    std::string jwt_secret_;
+    std::string session_cookie_name_;
+    std::string auth_cookie_name_;
+    size_t max_sessions_per_user_;
+    size_t max_failed_attempts_;
+    std::chrono::seconds lockout_duration_;
+
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
     ~WebServer();
@@ -269,6 +310,39 @@ public:
     std::string extract_client_info(const HttpRequest& req);
     void log_request_details(const HttpRequest& req);
     HttpResponse handle_content_negotiation_test(const HttpRequest& req, HttpResponse& res);
+
+    // Session management and authentication methods
+    std::string create_session(const std::string& username, const std::string& user_agent);
+    bool validate_session(const std::string& session_id);
+    void invalidate_session(const std::string& session_id);
+    std::string get_session_user(const std::string& session_id);
+    void update_session_activity(const std::string& session_id);
+    void cleanup_expired_sessions();
+    std::string generate_jwt_token(const std::string& username, const std::vector<std::string>& roles);
+    bool validate_jwt_token(const std::string& token, std::string& username);
+    std::string hash_password(const std::string& password);
+    bool verify_password(const std::string& password, const std::string& hash);
+    bool authenticate_user(const std::string& username, const std::string& password);
+    bool register_user(const std::string& username, const std::string& password, const std::vector<std::string>& roles);
+    bool has_permission(const std::string& username, const std::string& permission);
+    std::vector<std::string> get_user_roles(const std::string& username);
+    std::vector<std::string> get_role_permissions(const std::string& role);
+    void add_role_permission(const std::string& role, const std::string& permission);
+    void remove_role_permission(const std::string& role, const std::string& permission);
+    bool is_user_locked_out(const std::string& username);
+    void record_failed_login(const std::string& username);
+    void reset_failed_attempts(const std::string& username);
+    std::string extract_session_id(const HttpRequest& req);
+    void add_session_cookie(HttpResponse& res, const std::string& session_id);
+    void add_auth_cookie(HttpResponse& res, const std::string& token);
+    HttpResponse handle_login(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_logout(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_register(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_session_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_user_profile(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_change_password(const HttpRequest& req, HttpResponse& res);
+    HttpResponse require_authentication(const HttpRequest& req, HttpResponse& res, const std::function<HttpResponse(const HttpRequest&, HttpResponse&)>& handler);
+    HttpResponse require_permission(const HttpRequest& req, HttpResponse& res, const std::string& permission, const std::function<HttpResponse(const HttpRequest&, HttpResponse&)>& handler);
 
     // Security methods
     std::string sanitize_input(const std::string& input);
