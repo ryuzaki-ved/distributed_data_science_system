@@ -204,6 +204,26 @@ private:
     size_t max_sessions_per_user_;
     size_t max_failed_attempts_;
     std::chrono::seconds lockout_duration_;
+    
+    // API documentation and OpenAPI/Swagger members
+    bool api_documentation_enabled_;
+    bool swagger_ui_enabled_;
+    std::string api_version_;
+    std::string api_title_;
+    std::string api_description_;
+    std::string api_contact_email_;
+    std::string api_license_name_;
+    std::string api_license_url_;
+    std::map<std::string, std::string> endpoint_descriptions_;
+    std::map<std::string, std::map<std::string, std::string>> endpoint_parameters_;
+    std::map<std::string, std::map<int, std::string>> endpoint_responses_;
+    std::map<std::string, std::string> endpoint_tags_;
+    std::map<std::string, std::string> endpoint_summaries_;
+    std::map<std::string, std::string> endpoint_examples_;
+    std::map<std::string, std::vector<std::string>> endpoint_required_fields_;
+    std::map<std::string, std::map<std::string, std::string>> endpoint_schemas_;
+    std::mutex documentation_mutex_;
+    std::map<std::string, size_t> documentation_stats_;
 
 public:
     WebServer(int port = 8080, const std::string& host = "localhost");
@@ -342,8 +362,47 @@ public:
     HttpResponse handle_user_profile(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_change_password(const HttpRequest& req, HttpResponse& res);
     HttpResponse require_authentication(const HttpRequest& req, HttpResponse& res, const std::function<HttpResponse(const HttpRequest&, HttpResponse&)>& handler);
-    HttpResponse require_permission(const HttpRequest& req, HttpResponse& res, const std::string& permission, const std::function<HttpResponse(const HttpRequest&, HttpResponse&)>& handler);
-
+        HttpResponse require_permission(const HttpRequest& req, HttpResponse& res, const std::string& permission, const std::function<HttpResponse(const HttpRequest&, HttpResponse&)>& handler);
+    
+    // API documentation and OpenAPI/Swagger methods
+    void enable_api_documentation(bool enabled = true);
+    void enable_swagger_ui(bool enabled = true);
+    void set_api_info(const std::string& title, const std::string& description, const std::string& version);
+    void set_api_contact(const std::string& email);
+    void set_api_license(const std::string& name, const std::string& url);
+    void add_endpoint_documentation(const std::string& endpoint, const std::string& method, 
+                                   const std::string& summary, const std::string& description, 
+                                   const std::string& tag = "default");
+    void add_endpoint_parameter(const std::string& endpoint, const std::string& method,
+                               const std::string& name, const std::string& type, 
+                               const std::string& description, bool required = false);
+    void add_endpoint_response(const std::string& endpoint, const std::string& method,
+                              int status_code, const std::string& description);
+    void add_endpoint_example(const std::string& endpoint, const std::string& method,
+                             const std::string& example);
+    void add_endpoint_schema(const std::string& endpoint, const std::string& method,
+                            const std::string& field, const std::string& type, 
+                            const std::string& description = "");
+    void add_required_field(const std::string& endpoint, const std::string& method,
+                           const std::string& field);
+    std::string generate_openapi_spec();
+    std::string generate_swagger_ui_html();
+    std::string generate_api_documentation_html();
+    HttpResponse handle_openapi_spec(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_swagger_ui(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_api_docs(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_endpoint_docs(const HttpRequest& req, HttpResponse& res);
+    void initialize_api_documentation();
+    void register_endpoint_documentation();
+    std::string format_json_schema(const std::map<std::string, std::string>& schema);
+    std::string generate_markdown_documentation();
+    std::string generate_postman_collection();
+    HttpResponse handle_markdown_docs(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_postman_collection(const HttpRequest& req, HttpResponse& res);
+    void export_documentation(const std::string& format, const std::string& file_path);
+    size_t get_documentation_requests();
+    void reset_documentation_stats();
+    
     // Security methods
     std::string sanitize_input(const std::string& input);
     std::string encode_html_entities(const std::string& input);

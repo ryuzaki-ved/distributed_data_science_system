@@ -53,7 +53,12 @@ WebServer::WebServer(int port, const std::string& host)
                                                           session_timeout_(std::chrono::seconds(3600)), token_expiry_(std::chrono::seconds(7200)),
                                                           jwt_secret_("your-secret-key-change-in-production"), session_cookie_name_("session_id"),
                                                           auth_cookie_name_("auth_token"), max_sessions_per_user_(5), max_failed_attempts_(5),
-                                                          lockout_duration_(std::chrono::seconds(900)) {
+                                                          lockout_duration_(std::chrono::seconds(900)),
+                                                          api_documentation_enabled_(true), swagger_ui_enabled_(true),
+                                                          api_version_("1.0.0"), api_title_("Distributed Data Science System API"),
+                                                          api_description_("A comprehensive API for distributed data science operations including job management, HDFS operations, and machine learning algorithms"),
+                                                          api_contact_email_("admin@dds-system.com"), api_license_name_("MIT"),
+                                                          api_license_url_("https://opensource.org/licenses/MIT") {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -72,11 +77,16 @@ WebServer::WebServer(int port, const std::string& host)
         std::cout << "🤝 Content negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << " (default: " << default_content_type_ << ")" << std::endl;
         std::cout << "🔐 Session management: " << (session_management_enabled_ ? "Enabled" : "Disabled") << " (timeout: " << session_timeout_.count() << "s)" << std::endl;
         std::cout << "🔑 Authentication: " << (authentication_enabled_ ? "Enabled" : "Disabled") << " (max sessions: " << max_sessions_per_user_ << ")" << std::endl;
+        std::cout << "📚 API Documentation: " << (api_documentation_enabled_ ? "Enabled" : "Disabled") << " (version: " << api_version_ << ")" << std::endl;
+        std::cout << "🔍 Swagger UI: " << (swagger_ui_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
     // Initialize default routes
     initialize_default_routes();
+    
+    // Initialize API documentation
+    initialize_api_documentation();
     
     // Pre-compress static content
     pre_compress_static_content();
@@ -290,6 +300,31 @@ void WebServer::initialize_default_routes() {
             return require_authentication(req, res, [this](const HttpRequest& req, HttpResponse& res) {
                 return handle_change_password(req, res);
             });
+        });
+
+        // API documentation endpoints
+        add_get_route("/api/docs", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_api_docs(req, res);
+        });
+
+        add_get_route("/api/docs/openapi.json", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_openapi_spec(req, res);
+        });
+
+        add_get_route("/api/docs/swagger", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_swagger_ui(req, res);
+        });
+
+        add_get_route("/api/docs/markdown", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_markdown_docs(req, res);
+        });
+
+        add_get_route("/api/docs/postman", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_postman_collection(req, res);
+        });
+
+        add_get_route("/api/docs/endpoints", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_endpoint_docs(req, res);
         });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
@@ -974,6 +1009,9 @@ void WebServer::print_analytics() {
         std::cout << "   Successful Logins: " << authentication_stats_["successful_logins"] << std::endl;
         std::cout << "   Failed Logins: " << authentication_stats_["failed_logins"] << std::endl;
         std::cout << "   Registered Users: " << authentication_stats_["registered_users"] << std::endl;
+        std::cout << "   API Documentation: " << (api_documentation_enabled_ ? "Enabled" : "Disabled") << std::endl;
+        std::cout << "   Documentation Requests: " << documentation_stats_["total_requests"] << std::endl;
+        std::cout << "   Swagger UI: " << (swagger_ui_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
     std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
@@ -4242,6 +4280,664 @@ HttpResponse WebServer::require_permission(const HttpRequest& req, HttpResponse&
     }
     
     return handler(req, res);
+}
+
+// API Documentation and OpenAPI/Swagger Methods
+
+void WebServer::enable_api_documentation(bool enabled) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    api_documentation_enabled_ = enabled;
+    std::cout << "📚 API Documentation " << (enabled ? "enabled" : "disabled") << std::endl;
+}
+
+void WebServer::enable_swagger_ui(bool enabled) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    swagger_ui_enabled_ = enabled;
+    std::cout << "🔍 Swagger UI " << (enabled ? "enabled" : "disabled") << std::endl;
+}
+
+void WebServer::set_api_info(const std::string& title, const std::string& description, const std::string& version) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    api_title_ = title;
+    api_description_ = description;
+    api_version_ = version;
+    std::cout << "📝 API Info updated: " << title << " v" << version << std::endl;
+}
+
+void WebServer::set_api_contact(const std::string& email) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    api_contact_email_ = email;
+}
+
+void WebServer::set_api_license(const std::string& name, const std::string& url) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    api_license_name_ = name;
+    api_license_url_ = url;
+}
+
+void WebServer::add_endpoint_documentation(const std::string& endpoint, const std::string& method, 
+                                         const std::string& summary, const std::string& description, 
+                                         const std::string& tag) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    std::string key = method + ":" + endpoint;
+    endpoint_summaries_[key] = summary;
+    endpoint_descriptions_[key] = description;
+    endpoint_tags_[key] = tag;
+}
+
+void WebServer::add_endpoint_parameter(const std::string& endpoint, const std::string& method,
+                                     const std::string& name, const std::string& type, 
+                                     const std::string& description, bool required) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    std::string key = method + ":" + endpoint;
+    endpoint_parameters_[key][name] = type + "|" + description + "|" + (required ? "required" : "optional");
+}
+
+void WebServer::add_endpoint_response(const std::string& endpoint, const std::string& method,
+                                    int status_code, const std::string& description) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    std::string key = method + ":" + endpoint;
+    endpoint_responses_[key][status_code] = description;
+}
+
+void WebServer::add_endpoint_example(const std::string& endpoint, const std::string& method,
+                                   const std::string& example) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    std::string key = method + ":" + endpoint;
+    endpoint_examples_[key] = example;
+}
+
+void WebServer::add_endpoint_schema(const std::string& endpoint, const std::string& method,
+                                  const std::string& field, const std::string& type, 
+                                  const std::string& description) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    std::string key = method + ":" + endpoint;
+    endpoint_schemas_[key][field] = type + "|" + description;
+}
+
+void WebServer::add_required_field(const std::string& endpoint, const std::string& method,
+                                 const std::string& field) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    std::string key = method + ":" + endpoint;
+    endpoint_required_fields_[key].push_back(field);
+}
+
+std::string WebServer::generate_openapi_spec() {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    
+    std::string spec = "{\n";
+    spec += "  \"openapi\": \"3.0.0\",\n";
+    spec += "  \"info\": {\n";
+    spec += "    \"title\": \"" + api_title_ + "\",\n";
+    spec += "    \"description\": \"" + api_description_ + "\",\n";
+    spec += "    \"version\": \"" + api_version_ + "\",\n";
+    spec += "    \"contact\": {\n";
+    spec += "      \"email\": \"" + api_contact_email_ + "\"\n";
+    spec += "    },\n";
+    spec += "    \"license\": {\n";
+    spec += "      \"name\": \"" + api_license_name_ + "\",\n";
+    spec += "      \"url\": \"" + api_license_url_ + "\"\n";
+    spec += "    }\n";
+    spec += "  },\n";
+    spec += "  \"servers\": [\n";
+    spec += "    {\n";
+    spec += "      \"url\": \"http://" + host_ + ":" + std::to_string(port_) + "\",\n";
+    spec += "      \"description\": \"Development server\"\n";
+    spec += "    }\n";
+    spec += "  ],\n";
+    spec += "  \"paths\": {\n";
+    
+    // Add paths from registered routes
+    for (const auto& route : routes_) {
+        std::string method_path = route.first;
+        size_t colon_pos = method_path.find(':');
+        if (colon_pos != std::string::npos) {
+            std::string method = method_path.substr(0, colon_pos);
+            std::string path = method_path.substr(colon_pos + 1);
+            
+            spec += "    \"" + path + "\": {\n";
+            spec += "      \"" + method + "\": {\n";
+            
+            std::string key = method + ":" + path;
+            if (endpoint_summaries_.find(key) != endpoint_summaries_.end()) {
+                spec += "        \"summary\": \"" + endpoint_summaries_[key] + "\",\n";
+            }
+            if (endpoint_descriptions_.find(key) != endpoint_descriptions_.end()) {
+                spec += "        \"description\": \"" + endpoint_descriptions_[key] + "\",\n";
+            }
+            if (endpoint_tags_.find(key) != endpoint_tags_.end()) {
+                spec += "        \"tags\": [\"" + endpoint_tags_[key] + "\"],\n";
+            }
+            
+            // Add parameters
+            if (endpoint_parameters_.find(key) != endpoint_parameters_.end()) {
+                spec += "        \"parameters\": [\n";
+                for (const auto& param : endpoint_parameters_[key]) {
+                    std::vector<std::string> parts = split_string(param.second, '|');
+                    if (parts.size() >= 2) {
+                        spec += "          {\n";
+                        spec += "            \"name\": \"" + param.first + "\",\n";
+                        spec += "            \"in\": \"query\",\n";
+                        spec += "            \"schema\": {\n";
+                        spec += "              \"type\": \"" + parts[0] + "\"\n";
+                        spec += "            },\n";
+                        spec += "            \"description\": \"" + parts[1] + "\",\n";
+                        spec += "            \"required\": " + (parts.size() > 2 && parts[2] == "required" ? "true" : "false") + "\n";
+                        spec += "          }";
+                        if (&param != &endpoint_parameters_[key].rbegin().operator*()) {
+                            spec += ",";
+                        }
+                        spec += "\n";
+                    }
+                }
+                spec += "        ],\n";
+            }
+            
+            // Add responses
+            spec += "        \"responses\": {\n";
+            if (endpoint_responses_.find(key) != endpoint_responses_.end()) {
+                for (const auto& response : endpoint_responses_[key]) {
+                    spec += "          \"" + std::to_string(response.first) + "\": {\n";
+                    spec += "            \"description\": \"" + response.second + "\"\n";
+                    spec += "          }";
+                    if (&response != &endpoint_responses_[key].rbegin().operator*()) {
+                        spec += ",";
+                    }
+                    spec += "\n";
+                }
+            } else {
+                spec += "          \"200\": {\n";
+                spec += "            \"description\": \"Successful operation\"\n";
+                spec += "          }\n";
+            }
+            spec += "        }\n";
+            spec += "      }\n";
+            spec += "    }";
+            if (&route != &routes_.rbegin().operator*()) {
+                spec += ",";
+            }
+            spec += "\n";
+        }
+    }
+    
+    spec += "  }\n";
+    spec += "}\n";
+    
+    return spec;
+}
+
+std::string WebServer::generate_swagger_ui_html() {
+    std::string html = R"(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>)" + api_title_ + R"( - API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui.css" />
+    <style>
+        html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
+        *, *:before, *:after { box-sizing: inherit; }
+        body { margin:0; background: #fafafa; }
+    </style>
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@4.15.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            const ui = SwaggerUIBundle({
+                url: '/api/docs/openapi.json',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout"
+            });
+        };
+    </script>
+</body>
+</html>
+)";
+    return html;
+}
+
+std::string WebServer::generate_api_documentation_html() {
+    std::string html = R"(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>)" + api_title_ + R"( - API Documentation</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 3px solid #007bff; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        .endpoint { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 20px; margin: 15px 0; }
+        .method { display: inline-block; padding: 5px 10px; border-radius: 3px; color: white; font-weight: bold; margin-right: 10px; }
+        .get { background: #28a745; }
+        .post { background: #007bff; }
+        .put { background: #ffc107; color: #212529; }
+        .delete { background: #dc3545; }
+        .path { font-family: monospace; font-size: 16px; color: #333; }
+        .description { margin: 10px 0; color: #666; }
+        .parameters { margin: 15px 0; }
+        .parameter { background: #e9ecef; padding: 10px; border-radius: 3px; margin: 5px 0; }
+        .responses { margin: 15px 0; }
+        .response { background: #d4edda; padding: 8px; border-radius: 3px; margin: 3px 0; }
+        .example { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; padding: 15px; margin: 10px 0; font-family: monospace; }
+        .nav { background: #007bff; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        .nav a { color: white; text-decoration: none; margin-right: 20px; }
+        .nav a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/api/docs/swagger">Swagger UI</a>
+            <a href="/api/docs/openapi.json">OpenAPI JSON</a>
+            <a href="/api/docs/markdown">Markdown</a>
+            <a href="/api/docs/postman">Postman Collection</a>
+        </div>
+        
+        <h1>)" + api_title_ + R"(</h1>
+        <p>)" + api_description_ + R"(</p>
+        <p><strong>Version:</strong> )" + api_version_ + R"(</p>
+        <p><strong>Contact:</strong> <a href="mailto:)" + api_contact_email_ + R"(">)" + api_contact_email_ + R"(</a></p>
+        
+        <h2>API Endpoints</h2>
+)";
+    
+    // Group endpoints by tag
+    std::map<std::string, std::vector<std::string>> tagged_endpoints;
+    for (const auto& route : routes_) {
+        std::string method_path = route.first;
+        size_t colon_pos = method_path.find(':');
+        if (colon_pos != std::string::npos) {
+            std::string method = method_path.substr(0, colon_pos);
+            std::string path = method_path.substr(colon_pos + 1);
+            std::string key = method + ":" + path;
+            
+            std::string tag = "General";
+            if (endpoint_tags_.find(key) != endpoint_tags_.end()) {
+                tag = endpoint_tags_[key];
+            }
+            tagged_endpoints[tag].push_back(key);
+        }
+    }
+    
+    for (const auto& tag_group : tagged_endpoints) {
+        html += "        <h3>" + tag_group.first + "</h3>\n";
+        
+        for (const auto& endpoint_key : tag_group.second) {
+            size_t colon_pos = endpoint_key.find(':');
+            std::string method = endpoint_key.substr(0, colon_pos);
+            std::string path = endpoint_key.substr(colon_pos + 1);
+            
+            html += "        <div class=\"endpoint\">\n";
+            html += "            <span class=\"method " + method + "\">" + method + "</span>\n";
+            html += "            <span class=\"path\">" + path + "</span>\n";
+            
+            if (endpoint_summaries_.find(endpoint_key) != endpoint_summaries_.end()) {
+                html += "            <div class=\"description\"><strong>" + endpoint_summaries_[endpoint_key] + "</strong></div>\n";
+            }
+            if (endpoint_descriptions_.find(endpoint_key) != endpoint_descriptions_.end()) {
+                html += "            <div class=\"description\">" + endpoint_descriptions_[endpoint_key] + "</div>\n";
+            }
+            
+            // Add parameters
+            if (endpoint_parameters_.find(endpoint_key) != endpoint_parameters_.end()) {
+                html += "            <div class=\"parameters\">\n";
+                html += "                <h4>Parameters:</h4>\n";
+                for (const auto& param : endpoint_parameters_[endpoint_key]) {
+                    std::vector<std::string> parts = split_string(param.second, '|');
+                    if (parts.size() >= 2) {
+                        html += "                <div class=\"parameter\">\n";
+                        html += "                    <strong>" + param.first + "</strong> (" + parts[0] + ") - " + parts[1] + "\n";
+                        html += "                </div>\n";
+                    }
+                }
+                html += "            </div>\n";
+            }
+            
+            // Add responses
+            if (endpoint_responses_.find(endpoint_key) != endpoint_responses_.end()) {
+                html += "            <div class=\"responses\">\n";
+                html += "                <h4>Responses:</h4>\n";
+                for (const auto& response : endpoint_responses_[endpoint_key]) {
+                    html += "                <div class=\"response\">\n";
+                    html += "                    <strong>" + std::to_string(response.first) + "</strong> - " + response.second + "\n";
+                    html += "                </div>\n";
+                }
+                html += "            </div>\n";
+            }
+            
+            // Add examples
+            if (endpoint_examples_.find(endpoint_key) != endpoint_examples_.end()) {
+                html += "            <div class=\"example\">\n";
+                html += "                <h4>Example:</h4>\n";
+                html += "                <pre>" + endpoint_examples_[endpoint_key] + "</pre>\n";
+                html += "            </div>\n";
+            }
+            
+            html += "        </div>\n";
+        }
+    }
+    
+    html += R"(
+    </div>
+</body>
+</html>
+)";
+    
+    return html;
+}
+
+HttpResponse WebServer::handle_openapi_spec(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    documentation_stats_["total_requests"]++;
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Cache-Control"] = "public, max-age=3600";
+    res.body = generate_openapi_spec();
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_swagger_ui(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    documentation_stats_["total_requests"]++;
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "text/html";
+    res.headers["Cache-Control"] = "public, max-age=3600";
+    res.body = generate_swagger_ui_html();
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_api_docs(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    documentation_stats_["total_requests"]++;
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "text/html";
+    res.headers["Cache-Control"] = "public, max-age=3600";
+    res.body = generate_api_documentation_html();
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_endpoint_docs(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    documentation_stats_["total_requests"]++;
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    
+    std::string json = "{\n";
+    json += "  \"endpoints\": [\n";
+    
+    for (const auto& route : routes_) {
+        std::string method_path = route.first;
+        size_t colon_pos = method_path.find(':');
+        if (colon_pos != std::string::npos) {
+            std::string method = method_path.substr(0, colon_pos);
+            std::string path = method_path.substr(colon_pos + 1);
+            
+            json += "    {\n";
+            json += "      \"method\": \"" + method + "\",\n";
+            json += "      \"path\": \"" + path + "\",\n";
+            
+            std::string key = method + ":" + path;
+            if (endpoint_summaries_.find(key) != endpoint_summaries_.end()) {
+                json += "      \"summary\": \"" + endpoint_summaries_[key] + "\",\n";
+            }
+            if (endpoint_descriptions_.find(key) != endpoint_descriptions_.end()) {
+                json += "      \"description\": \"" + endpoint_descriptions_[key] + "\",\n";
+            }
+            if (endpoint_tags_.find(key) != endpoint_tags_.end()) {
+                json += "      \"tag\": \"" + endpoint_tags_[key] + "\"\n";
+            }
+            
+            json += "    }";
+            if (&route != &routes_.rbegin().operator*()) {
+                json += ",";
+            }
+            json += "\n";
+        }
+    }
+    
+    json += "  ]\n";
+    json += "}\n";
+    
+    res.body = json;
+    return res;
+}
+
+void WebServer::initialize_api_documentation() {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    
+    // Initialize documentation statistics
+    documentation_stats_["total_requests"] = 0;
+    documentation_stats_["openapi_requests"] = 0;
+    documentation_stats_["swagger_requests"] = 0;
+    documentation_stats_["html_requests"] = 0;
+    
+    std::cout << "📚 API Documentation system initialized" << std::endl;
+}
+
+void WebServer::register_endpoint_documentation() {
+    // Register documentation for existing endpoints
+    add_endpoint_documentation("/", "GET", "Dashboard", "Main dashboard page", "UI");
+    add_endpoint_documentation("/api/status", "GET", "System Status", "Get system status and health information", "System");
+    add_endpoint_documentation("/api/jobs", "GET", "List Jobs", "Get list of all jobs", "Jobs");
+    add_endpoint_documentation("/api/jobs", "POST", "Submit Job", "Submit a new job", "Jobs");
+    add_endpoint_documentation("/api/jobs/{id}", "GET", "Get Job Status", "Get status of a specific job", "Jobs");
+    add_endpoint_documentation("/api/hdfs/list", "GET", "List HDFS Files", "List files in HDFS", "Storage");
+    add_endpoint_documentation("/api/hdfs/upload", "POST", "Upload File", "Upload file to HDFS", "Storage");
+    add_endpoint_documentation("/api/hdfs/download", "GET", "Download File", "Download file from HDFS", "Storage");
+    add_endpoint_documentation("/api/cluster/info", "GET", "Cluster Info", "Get cluster information", "System");
+    
+    // Add parameters
+    add_endpoint_parameter("/api/jobs/{id}", "GET", "id", "string", "Job ID", true);
+    add_endpoint_parameter("/api/hdfs/download", "GET", "path", "string", "File path in HDFS", true);
+    
+    // Add responses
+    add_endpoint_response("/api/status", "GET", 200, "System status retrieved successfully");
+    add_endpoint_response("/api/status", "GET", 500, "Internal server error");
+    add_endpoint_response("/api/jobs", "GET", 200, "Jobs list retrieved successfully");
+    add_endpoint_response("/api/jobs", "POST", 201, "Job submitted successfully");
+    add_endpoint_response("/api/jobs", "POST", 400, "Invalid job data");
+    
+    std::cout << "📝 Endpoint documentation registered" << std::endl;
+}
+
+std::string WebServer::format_json_schema(const std::map<std::string, std::string>& schema) {
+    std::string json = "{\n";
+    json += "  \"type\": \"object\",\n";
+    json += "  \"properties\": {\n";
+    
+    for (const auto& field : schema) {
+        json += "    \"" + field.first + "\": {\n";
+        json += "      \"type\": \"" + field.second + "\"\n";
+        json += "    }";
+        if (&field != &schema.rbegin().operator*()) {
+            json += ",";
+        }
+        json += "\n";
+    }
+    
+    json += "  }\n";
+    json += "}\n";
+    
+    return json;
+}
+
+std::string WebServer::generate_markdown_documentation() {
+    std::string markdown = "# " + api_title_ + "\n\n";
+    markdown += api_description_ + "\n\n";
+    markdown += "**Version:** " + api_version_ + "\n\n";
+    markdown += "**Contact:** " + api_contact_email_ + "\n\n";
+    markdown += "## Endpoints\n\n";
+    
+    for (const auto& route : routes_) {
+        std::string method_path = route.first;
+        size_t colon_pos = method_path.find(':');
+        if (colon_pos != std::string::npos) {
+            std::string method = method_path.substr(0, colon_pos);
+            std::string path = method_path.substr(colon_pos + 1);
+            
+            markdown += "### " + method + " " + path + "\n\n";
+            
+            std::string key = method + ":" + path;
+            if (endpoint_summaries_.find(key) != endpoint_summaries_.end()) {
+                markdown += "**Summary:** " + endpoint_summaries_[key] + "\n\n";
+            }
+            if (endpoint_descriptions_.find(key) != endpoint_descriptions_.end()) {
+                markdown += endpoint_descriptions_[key] + "\n\n";
+            }
+            
+            if (endpoint_parameters_.find(key) != endpoint_parameters_.end()) {
+                markdown += "**Parameters:**\n\n";
+                for (const auto& param : endpoint_parameters_[key]) {
+                    std::vector<std::string> parts = split_string(param.second, '|');
+                    if (parts.size() >= 2) {
+                        markdown += "- `" + param.first + "` (" + parts[0] + ") - " + parts[1] + "\n";
+                    }
+                }
+                markdown += "\n";
+            }
+            
+            if (endpoint_responses_.find(key) != endpoint_responses_.end()) {
+                markdown += "**Responses:**\n\n";
+                for (const auto& response : endpoint_responses_[key]) {
+                    markdown += "- `" + std::to_string(response.first) + "` - " + response.second + "\n";
+                }
+                markdown += "\n";
+            }
+        }
+    }
+    
+    return markdown;
+}
+
+std::string WebServer::generate_postman_collection() {
+    std::string collection = "{\n";
+    collection += "  \"info\": {\n";
+    collection += "    \"name\": \"" + api_title_ + "\",\n";
+    collection += "    \"description\": \"" + api_description_ + "\",\n";
+    collection += "    \"version\": \"" + api_version_ + "\"\n";
+    collection += "  },\n";
+    collection += "  \"item\": [\n";
+    
+    for (const auto& route : routes_) {
+        std::string method_path = route.first;
+        size_t colon_pos = method_path.find(':');
+        if (colon_pos != std::string::npos) {
+            std::string method = method_path.substr(0, colon_pos);
+            std::string path = method_path.substr(colon_pos + 1);
+            
+            collection += "    {\n";
+            collection += "      \"name\": \"" + method + " " + path + "\",\n";
+            collection += "      \"request\": {\n";
+            collection += "        \"method\": \"" + method + "\",\n";
+            collection += "        \"url\": {\n";
+            collection += "          \"raw\": \"{{base_url}}" + path + "\",\n";
+            collection += "          \"host\": [\"{{base_url}}\"],\n";
+            collection += "          \"path\": [";
+            
+            std::vector<std::string> path_parts = split_string(path, '/');
+            for (size_t i = 0; i < path_parts.size(); ++i) {
+                if (!path_parts[i].empty()) {
+                    collection += "\"" + path_parts[i] + "\"";
+                    if (i < path_parts.size() - 1) {
+                        collection += ", ";
+                    }
+                }
+            }
+            
+            collection += "]\n";
+            collection += "        }\n";
+            collection += "      }\n";
+            collection += "    }";
+            if (&route != &routes_.rbegin().operator*()) {
+                collection += ",";
+            }
+            collection += "\n";
+        }
+    }
+    
+    collection += "  ]\n";
+    collection += "}\n";
+    
+    return collection;
+}
+
+HttpResponse WebServer::handle_markdown_docs(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    documentation_stats_["total_requests"]++;
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "text/markdown";
+    res.headers["Content-Disposition"] = "attachment; filename=\"api-documentation.md\"";
+    res.body = generate_markdown_documentation();
+    
+    return res;
+}
+
+HttpResponse WebServer::handle_postman_collection(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    documentation_stats_["total_requests"]++;
+    
+    res.status_code = 200;
+    res.headers["Content-Type"] = "application/json";
+    res.headers["Content-Disposition"] = "attachment; filename=\"postman-collection.json\"";
+    res.body = generate_postman_collection();
+    
+    return res;
+}
+
+void WebServer::export_documentation(const std::string& format, const std::string& file_path) {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    
+    std::ofstream file(file_path);
+    if (file.is_open()) {
+        if (format == "openapi") {
+            file << generate_openapi_spec();
+        } else if (format == "markdown") {
+            file << generate_markdown_documentation();
+        } else if (format == "postman") {
+            file << generate_postman_collection();
+        }
+        file.close();
+        std::cout << "📄 Documentation exported to " << file_path << std::endl;
+    } else {
+        std::cerr << "❌ Failed to export documentation to " << file_path << std::endl;
+    }
+}
+
+size_t WebServer::get_documentation_requests() {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    return documentation_stats_["total_requests"];
+}
+
+void WebServer::reset_documentation_stats() {
+    std::lock_guard<std::mutex> lock(documentation_mutex_);
+    documentation_stats_.clear();
+    documentation_stats_["total_requests"] = 0;
+    documentation_stats_["openapi_requests"] = 0;
+    documentation_stats_["swagger_requests"] = 0;
+    documentation_stats_["html_requests"] = 0;
 }
 
 } // namespace web
