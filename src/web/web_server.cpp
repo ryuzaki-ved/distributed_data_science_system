@@ -40,8 +40,10 @@ WebServer::WebServer(int port, const std::string& host)
     adaptive_compression_enabled_(true), bandwidth_throttling_enabled_(true),
     max_bandwidth_per_client_(10485760), total_bytes_sent_(0), total_bytes_compressed_(0),
     average_compression_ratio_(0.0),                     analytics_enabled_(true), total_requests_(0),
-                    total_responses_(0), total_errors_(0), analytics_start_time_(std::chrono::steady_clock::now()),
-                    security_enabled_(true), security_log_file_("security.log") {
+                                                    total_responses_(0), total_errors_(0), analytics_start_time_(std::chrono::steady_clock::now()),
+                                security_enabled_(true), security_log_file_("security.log"), max_cache_size_(1000),
+                                cache_ttl_(std::chrono::seconds(300)), intelligent_caching_enabled_(true), cache_hit_ratio_(0.0),
+                                total_cache_requests_(0), cache_stats_start_time_(std::chrono::steady_clock::now()) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -55,6 +57,7 @@ WebServer::WebServer(int port, const std::string& host)
                         std::cout << "📊 Analytics and profiling: " << (analytics_enabled_ ? "Enabled" : "Disabled") << std::endl;
                     std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
                     std::cout << "🛡️ Security features: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
+                    std::cout << "🧠 Intelligent caching: " << (intelligent_caching_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_cache_size_ << " entries, TTL: " << cache_ttl_.count() << "s)" << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
@@ -219,9 +222,18 @@ void WebServer::initialize_default_routes() {
                         return handle_security_status(req, res);
                     });
 
-                    add_post_route("/api/security/csrf-token", [this](const HttpRequest& req, HttpResponse& res) {
-                        return handle_csrf_token_generation(req, res);
-                    });
+                                                    add_post_route("/api/security/csrf-token", [this](const HttpRequest& req, HttpResponse& res) {
+                                    return handle_csrf_token_generation(req, res);
+                                });
+
+                                // Cache management endpoints
+                                add_get_route("/api/cache/status", [this](const HttpRequest& req, HttpResponse& res) {
+                                    return handle_cache_status(req, res);
+                                });
+
+                                add_post_route("/api/cache/clear", [this](const HttpRequest& req, HttpResponse& res) {
+                                    return handle_cache_management(req, res);
+                                });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
 }
@@ -889,7 +901,10 @@ void WebServer::print_analytics() {
     std::cout << "   Request Validation: " << (validation_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Security Enabled: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Blocked IPs: " << blocked_ips_.size() << std::endl;
-    std::cout << "   Security Events: " << security_event_counts_.size() << std::endl;
+                        std::cout << "   Security Events: " << security_event_counts_.size() << std::endl;
+                    std::cout << "   Cache Size: " << get_cache_size() << "/" << max_cache_size_ << " entries" << std::endl;
+                    std::cout << "   Cache Hit Ratio: " << std::fixed << std::setprecision(2) << get_cache_hit_ratio() << "%" << std::endl;
+                    std::cout << "   Cache Hits: " << cache_hits_ << ", Misses: " << cache_misses_ << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
     std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
@@ -2824,6 +2839,254 @@ HttpResponse WebServer::handle_csrf_token_generation(const HttpRequest& req, Htt
     json << "{\"csrf_token\": \"" << token << "\"}";
     
     res.body = json.str();
+    return res;
+}
+
+// Advanced caching method implementations
+std::optional<HttpResponse> WebServer::get_cached_response(const std::string& cache_key) {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    auto it = response_cache_.find(cache_key);
+    if (it != response_cache_.end()) {
+        auto now = std::chrono::steady_clock::now();
+        auto access_time = cache_access_times_[cache_key];
+        
+        // Check if cache entry has expired
+        if (now - access_time < cache_ttl_) {
+            // Update access time and move to front of LRU
+            cache_access_times_[cache_key] = now;
+            update_cache_access_time(cache_key);
+            cache_hit_counts_[cache_key]++;
+            cache_hits_++;
+            total_cache_requests_++;
+            update_cache_hit_ratio();
+            return it->second;
+        } else {
+            // Remove expired entry
+            response_cache_.erase(it);
+            cache_access_times_.erase(cache_key);
+            auto lru_it = std::find(cache_lru_order_.begin(), cache_lru_order_.end(), cache_key);
+            if (lru_it != cache_lru_order_.end()) {
+                cache_lru_order_.erase(lru_it);
+            }
+        }
+    }
+    
+    cache_miss_counts_[cache_key]++;
+    cache_misses_++;
+    total_cache_requests_++;
+    update_cache_hit_ratio();
+    return std::nullopt;
+}
+
+void WebServer::cache_response(const std::string& cache_key, const HttpResponse& response) {
+    if (!intelligent_caching_enabled_ || !should_cache_response(response)) {
+        return;
+    }
+    
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    // Check if cache is full and evict LRU entry if necessary
+    if (response_cache_.size() >= max_cache_size_) {
+        evict_lru_cache_entry();
+    }
+    
+    auto now = std::chrono::steady_clock::now();
+    response_cache_[cache_key] = response;
+    cache_access_times_[cache_key] = now;
+    
+    // Add to LRU order
+    auto it = std::find(cache_lru_order_.begin(), cache_lru_order_.end(), cache_key);
+    if (it != cache_lru_order_.end()) {
+        cache_lru_order_.erase(it);
+    }
+    cache_lru_order_.push_back(cache_key);
+}
+
+void WebServer::invalidate_cache(const std::string& cache_key) {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    response_cache_.erase(cache_key);
+    cache_access_times_.erase(cache_key);
+    
+    auto it = std::find(cache_lru_order_.begin(), cache_lru_order_.end(), cache_key);
+    if (it != cache_lru_order_.end()) {
+        cache_lru_order_.erase(it);
+    }
+}
+
+void WebServer::clear_cache() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    response_cache_.clear();
+    cache_access_times_.clear();
+    cache_lru_order_.clear();
+    cache_hit_counts_.clear();
+    cache_miss_counts_.clear();
+    
+    std::cout << "🧹 Cache cleared" << std::endl;
+}
+
+void WebServer::update_cache_access_time(const std::string& cache_key) {
+    auto it = std::find(cache_lru_order_.begin(), cache_lru_order_.end(), cache_key);
+    if (it != cache_lru_order_.end()) {
+        cache_lru_order_.erase(it);
+        cache_lru_order_.push_back(cache_key);
+    }
+}
+
+void WebServer::evict_lru_cache_entry() {
+    if (!cache_lru_order_.empty()) {
+        std::string lru_key = cache_lru_order_.front();
+        response_cache_.erase(lru_key);
+        cache_access_times_.erase(lru_key);
+        cache_lru_order_.erase(cache_lru_order_.begin());
+    }
+}
+
+bool WebServer::should_cache_response(const HttpResponse& response) {
+    // Don't cache error responses
+    if (response.status_code >= 400) {
+        return false;
+    }
+    
+    // Don't cache very large responses
+    if (response.body.size() > 1024 * 1024) { // 1MB limit
+        return false;
+    }
+    
+    // Check content type for cacheable responses
+    auto content_type = response.headers.find("Content-Type");
+    if (content_type != response.headers.end()) {
+        std::string type = content_type->second;
+        return type.find("text/") == 0 || 
+               type.find("application/json") == 0 ||
+               type.find("application/xml") == 0 ||
+               type.find("image/") == 0;
+    }
+    
+    return true;
+}
+
+std::string WebServer::generate_cache_key(const HttpRequest& req) {
+    std::string key = req.method + ":" + req.path;
+    
+    // Include query parameters in cache key
+    if (!req.query_params.empty()) {
+        key += "?";
+        for (const auto& param : req.query_params) {
+            key += param.first + "=" + param.second + "&";
+        }
+        key.pop_back(); // Remove trailing &
+    }
+    
+    // Include relevant headers that affect response
+    auto accept_header = req.headers.find("Accept");
+    if (accept_header != req.headers.end()) {
+        key += "|Accept:" + accept_header->second;
+    }
+    
+    return key;
+}
+
+double WebServer::get_cache_hit_ratio() {
+    return cache_hit_ratio_;
+}
+
+size_t WebServer::get_cache_size() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    return response_cache_.size();
+}
+
+std::map<std::string, size_t> WebServer::get_cache_hit_counts() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    return cache_hit_counts_;
+}
+
+std::map<std::string, size_t> WebServer::get_cache_miss_counts() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    return cache_miss_counts_;
+}
+
+void WebServer::reset_cache_stats() {
+    std::lock_guard<std::mutex> lock(cache_mutex_);
+    
+    cache_hit_counts_.clear();
+    cache_miss_counts_.clear();
+    cache_hits_ = 0;
+    cache_misses_ = 0;
+    total_cache_requests_ = 0;
+    cache_hit_ratio_ = 0.0;
+    cache_stats_start_time_ = std::chrono::steady_clock::now();
+    
+    std::cout << "📊 Cache statistics reset" << std::endl;
+}
+
+void WebServer::update_cache_hit_ratio() {
+    if (total_cache_requests_ > 0) {
+        cache_hit_ratio_ = static_cast<double>(cache_hits_) / total_cache_requests_ * 100.0;
+    }
+}
+
+HttpResponse WebServer::handle_cache_status(const HttpRequest& req, HttpResponse& res) {
+    res.headers["Content-Type"] = "application/json";
+    
+    std::map<std::string, size_t> hit_counts = get_cache_hit_counts();
+    std::map<std::string, size_t> miss_counts = get_cache_miss_counts();
+    
+    std::stringstream json;
+    json << "{";
+    json << "\"enabled\":" << (intelligent_caching_enabled_ ? "true" : "false") << ",";
+    json << "\"cache_size\":" << get_cache_size() << ",";
+    json << "\"max_cache_size\":" << max_cache_size_ << ",";
+    json << "\"cache_ttl_seconds\":" << cache_ttl_.count() << ",";
+    json << "\"total_requests\":" << total_cache_requests_ << ",";
+    json << "\"cache_hits\":" << cache_hits_ << ",";
+    json << "\"cache_misses\":" << cache_misses_ << ",";
+    json << "\"hit_ratio\":" << std::fixed << std::setprecision(2) << get_cache_hit_ratio() << ",";
+    json << "\"top_hit_endpoints\":{";
+    
+    // Add top hit endpoints
+    std::vector<std::pair<std::string, size_t>> sorted_hits(hit_counts.begin(), hit_counts.end());
+    std::sort(sorted_hits.begin(), sorted_hits.end(), 
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    for (size_t i = 0; i < std::min(sorted_hits.size(), size_t(5)); ++i) {
+        if (i > 0) json << ",";
+        json << "\"" << sorted_hits[i].first << "\":" << sorted_hits[i].second;
+    }
+    
+    json << "},";
+    json << "\"top_miss_endpoints\":{";
+    
+    // Add top miss endpoints
+    std::vector<std::pair<std::string, size_t>> sorted_misses(miss_counts.begin(), miss_counts.end());
+    std::sort(sorted_misses.begin(), sorted_misses.end(), 
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+    
+    for (size_t i = 0; i < std::min(sorted_misses.size(), size_t(5)); ++i) {
+        if (i > 0) json << ",";
+        json << "\"" << sorted_misses[i].first << "\":" << sorted_misses[i].second;
+    }
+    
+    json << "}";
+    json << "}";
+    
+    res.body = json.str();
+    return res;
+}
+
+HttpResponse WebServer::handle_cache_management(const HttpRequest& req, HttpResponse& res) {
+    res.headers["Content-Type"] = "application/json";
+    
+    if (req.method == "POST" && req.path.find("/api/cache/clear") != std::string::npos) {
+        clear_cache();
+        res.body = "{\"message\":\"Cache cleared successfully\",\"status\":\"success\"}";
+    } else {
+        res.status_code = 400;
+        res.body = "{\"error\":\"Invalid cache management operation\",\"status\":\"error\"}";
+    }
+    
     return res;
 }
 

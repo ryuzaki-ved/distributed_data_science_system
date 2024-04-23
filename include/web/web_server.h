@@ -84,6 +84,20 @@ private:
     size_t cache_hits_;
     size_t cache_misses_;
     
+    // Advanced caching members
+    std::unordered_map<std::string, HttpResponse> response_cache_;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> cache_access_times_;
+    std::vector<std::string> cache_lru_order_;
+    std::mutex cache_mutex_;
+    size_t max_cache_size_;
+    std::chrono::seconds cache_ttl_;
+    bool intelligent_caching_enabled_;
+    std::map<std::string, size_t> cache_hit_counts_;
+    std::map<std::string, size_t> cache_miss_counts_;
+    double cache_hit_ratio_;
+    size_t total_cache_requests_;
+    std::chrono::steady_clock::time_point cache_stats_start_time_;
+    
     // Bandwidth optimization members
     bool compression_enabled_;
     int compression_level_;
@@ -177,6 +191,23 @@ public:
     HttpResponse handle_analytics_dashboard(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_performance_report(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_endpoint_analytics(const HttpRequest& req, HttpResponse& res);
+
+    // Advanced caching methods
+    std::optional<HttpResponse> get_cached_response(const std::string& cache_key);
+    void cache_response(const std::string& cache_key, const HttpResponse& response);
+    void invalidate_cache(const std::string& cache_key);
+    void clear_cache();
+    void update_cache_access_time(const std::string& cache_key);
+    void evict_lru_cache_entry();
+    bool should_cache_response(const HttpResponse& response);
+    std::string generate_cache_key(const HttpRequest& req);
+    double get_cache_hit_ratio();
+    size_t get_cache_size();
+    std::map<std::string, size_t> get_cache_hit_counts();
+    std::map<std::string, size_t> get_cache_miss_counts();
+    void reset_cache_stats();
+    HttpResponse handle_cache_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_cache_management(const HttpRequest& req, HttpResponse& res);
 
     // Security methods
     std::string sanitize_input(const std::string& input);
