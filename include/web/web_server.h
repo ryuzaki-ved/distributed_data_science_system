@@ -97,6 +97,18 @@ private:
     double cache_hit_ratio_;
     size_t total_cache_requests_;
     std::chrono::steady_clock::time_point cache_stats_start_time_;
+
+    // Error handling and recovery members
+    std::atomic<bool> server_healthy_;
+    std::atomic<size_t> consecutive_errors_;
+    std::atomic<size_t> total_errors_;
+    std::map<std::string, size_t> error_counts_;
+    std::vector<std::string> error_log_;
+    std::mutex error_mutex_;
+    std::chrono::steady_clock::time_point last_health_check_;
+    std::chrono::seconds health_check_interval_;
+    std::string error_log_file_;
+    bool auto_recovery_enabled_;
     
     // Bandwidth optimization members
     bool compression_enabled_;
@@ -208,6 +220,18 @@ public:
     void reset_cache_stats();
     HttpResponse handle_cache_status(const HttpRequest& req, HttpResponse& res);
     HttpResponse handle_cache_management(const HttpRequest& req, HttpResponse& res);
+
+    // Error handling and recovery methods
+    void handle_server_error(const std::exception& e, HttpResponse& res);
+    void handle_client_error(int status_code, const std::string& message, HttpResponse& res);
+    void log_error(const std::string& error_type, const std::string& message, const std::string& details = "");
+    void recover_from_error();
+    bool is_server_healthy();
+    void perform_health_check();
+    void cleanup_resources();
+    void restart_failed_components();
+    HttpResponse handle_error_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_health_check(const HttpRequest& req, HttpResponse& res);
 
     // Security methods
     std::string sanitize_input(const std::string& input);

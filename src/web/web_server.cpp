@@ -42,8 +42,11 @@ WebServer::WebServer(int port, const std::string& host)
     average_compression_ratio_(0.0),                     analytics_enabled_(true), total_requests_(0),
                                                     total_responses_(0), total_errors_(0), analytics_start_time_(std::chrono::steady_clock::now()),
                                 security_enabled_(true), security_log_file_("security.log"), max_cache_size_(1000),
-                                cache_ttl_(std::chrono::seconds(300)), intelligent_caching_enabled_(true), cache_hit_ratio_(0.0),
-                                total_cache_requests_(0), cache_stats_start_time_(std::chrono::steady_clock::now()) {
+                                cache_ttl_(std::chrono::seconds(300)), intelligent_caching_enabled_(true),                                 cache_hit_ratio_(0.0),
+                                total_cache_requests_(0), cache_stats_start_time_(std::chrono::steady_clock::now()),
+                                server_healthy_(true), consecutive_errors_(0), total_errors_(0),
+                                last_health_check_(std::chrono::steady_clock::now()), health_check_interval_(std::chrono::seconds(30)),
+                                error_log_file_("error.log"), auto_recovery_enabled_(true) {
     
     // Initialize thread pool
     for (int i = 0; i < thread_pool_size_; ++i) {
@@ -56,8 +59,9 @@ WebServer::WebServer(int port, const std::string& host)
     std::cout << "🚫 Bandwidth throttling: " << (bandwidth_throttling_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_bandwidth_per_client_ / 1024 / 1024 << " MB/min)" << std::endl;
                         std::cout << "📊 Analytics and profiling: " << (analytics_enabled_ ? "Enabled" : "Disabled") << std::endl;
                     std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
-                    std::cout << "🛡️ Security features: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
-                    std::cout << "🧠 Intelligent caching: " << (intelligent_caching_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_cache_size_ << " entries, TTL: " << cache_ttl_.count() << "s)" << std::endl;
+                                                        std::cout << "🛡️ Security features: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
+                                    std::cout << "🧠 Intelligent caching: " << (intelligent_caching_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_cache_size_ << " entries, TTL: " << cache_ttl_.count() << "s)" << std::endl;
+                                    std::cout << "🔄 Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << " (health check: " << health_check_interval_.count() << "s)" << std::endl;
     std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
     std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
     
@@ -233,6 +237,15 @@ void WebServer::initialize_default_routes() {
 
                                 add_post_route("/api/cache/clear", [this](const HttpRequest& req, HttpResponse& res) {
                                     return handle_cache_management(req, res);
+                                });
+
+                                // Error handling and recovery endpoints
+                                add_get_route("/api/health", [this](const HttpRequest& req, HttpResponse& res) {
+                                    return handle_health_check(req, res);
+                                });
+
+                                add_get_route("/api/error/status", [this](const HttpRequest& req, HttpResponse& res) {
+                                    return handle_error_status(req, res);
                                 });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
@@ -902,9 +915,12 @@ void WebServer::print_analytics() {
     std::cout << "   Security Enabled: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Blocked IPs: " << blocked_ips_.size() << std::endl;
                         std::cout << "   Security Events: " << security_event_counts_.size() << std::endl;
-                    std::cout << "   Cache Size: " << get_cache_size() << "/" << max_cache_size_ << " entries" << std::endl;
-                    std::cout << "   Cache Hit Ratio: " << std::fixed << std::setprecision(2) << get_cache_hit_ratio() << "%" << std::endl;
-                    std::cout << "   Cache Hits: " << cache_hits_ << ", Misses: " << cache_misses_ << std::endl;
+                                                        std::cout << "   Cache Size: " << get_cache_size() << "/" << max_cache_size_ << " entries" << std::endl;
+                                    std::cout << "   Cache Hit Ratio: " << std::fixed << std::setprecision(2) << get_cache_hit_ratio() << "%" << std::endl;
+                                    std::cout << "   Cache Hits: " << cache_hits_ << ", Misses: " << cache_misses_ << std::endl;
+                                    std::cout << "   Server Health: " << (server_healthy_ ? "Healthy" : "Unhealthy") << std::endl;
+                                    std::cout << "   Total Errors: " << total_errors_ << ", Consecutive: " << consecutive_errors_ << std::endl;
+                                    std::cout << "   Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << std::endl;
     std::cout << "   Max Request Size: " << max_request_size_ << " bytes" << std::endl;
     std::cout << "   Max Header Size: " << max_header_size_ << " bytes" << std::endl;
     std::cout << "   Routing Framework: " << (routing_enabled_ ? "Enabled" : "Disabled") << std::endl;
@@ -3087,6 +3103,255 @@ HttpResponse WebServer::handle_cache_management(const HttpRequest& req, HttpResp
         res.body = "{\"error\":\"Invalid cache management operation\",\"status\":\"error\"}";
     }
     
+    return res;
+}
+
+// Error handling and recovery methods
+void WebServer::handle_server_error(const std::exception& e, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(error_mutex_);
+    
+    total_errors_++;
+    consecutive_errors_++;
+    server_healthy_ = false;
+    
+    std::string error_msg = "Internal Server Error: " + std::string(e.what());
+    log_error("SERVER_ERROR", error_msg);
+    
+    res.status_code = 500;
+    res.status_text = "Internal Server Error";
+    res.headers["Content-Type"] = "application/json";
+    res.body = "{\"error\":\"Internal Server Error\",\"message\":\"" + sanitize_input(e.what()) + "\",\"timestamp\":\"" + get_current_timestamp() + "\"}";
+    
+    // Auto-recovery attempt
+    if (auto_recovery_enabled_ && consecutive_errors_ > 5) {
+        std::cout << "⚠️ Auto-recovery triggered due to consecutive errors" << std::endl;
+        recover_from_error();
+    }
+}
+
+void WebServer::handle_client_error(int status_code, const std::string& message, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(error_mutex_);
+    
+    total_errors_++;
+    log_error("CLIENT_ERROR", message, "Status: " + std::to_string(status_code));
+    
+    res.status_code = status_code;
+    res.status_text = get_status_text(status_code);
+    res.headers["Content-Type"] = "application/json";
+    res.body = "{\"error\":\"" + get_status_text(status_code) + "\",\"message\":\"" + sanitize_input(message) + "\",\"timestamp\":\"" + get_current_timestamp() + "\"}";
+}
+
+void WebServer::log_error(const std::string& error_type, const std::string& message, const std::string& details) {
+    std::lock_guard<std::mutex> lock(error_mutex_);
+    
+    std::string timestamp = get_current_timestamp();
+    std::string log_entry = "[" + timestamp + "] " + error_type + ": " + message;
+    if (!details.empty()) {
+        log_entry += " | " + details;
+    }
+    
+    error_log_.push_back(log_entry);
+    error_counts_[error_type]++;
+    
+    // Keep log size manageable
+    if (error_log_.size() > 1000) {
+        error_log_.erase(error_log_.begin(), error_log_.begin() + 500);
+    }
+    
+    // Write to file
+    std::ofstream log_file(error_log_file_, std::ios::app);
+    if (log_file.is_open()) {
+        log_file << log_entry << std::endl;
+        log_file.close();
+    }
+    
+    std::cout << "❌ " << log_entry << std::endl;
+}
+
+void WebServer::recover_from_error() {
+    std::cout << "🔄 Attempting server recovery..." << std::endl;
+    
+    try {
+        // Cleanup resources
+        cleanup_resources();
+        
+        // Restart failed components
+        restart_failed_components();
+        
+        // Perform health check
+        perform_health_check();
+        
+        if (server_healthy_) {
+            consecutive_errors_ = 0;
+            std::cout << "✅ Server recovery successful" << std::endl;
+        } else {
+            std::cout << "❌ Server recovery failed" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cout << "❌ Recovery attempt failed: " << e.what() << std::endl;
+    }
+}
+
+bool WebServer::is_server_healthy() {
+    return server_healthy_ && consecutive_errors_ < 10;
+}
+
+void WebServer::perform_health_check() {
+    auto now = std::chrono::steady_clock::now();
+    if (now - last_health_check_ < health_check_interval_) {
+        return;
+    }
+    
+    last_health_check_ = now;
+    
+    try {
+        // Check basic functionality
+        bool healthy = true;
+        
+        // Check if thread pool is responsive
+        if (thread_pool_.size() == 0) {
+            healthy = false;
+        }
+        
+        // Check if cache is accessible
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex_);
+            if (response_cache_.size() > max_cache_size_ * 2) {
+                healthy = false;
+            }
+        }
+        
+        // Check if analytics are working
+        if (analytics_enabled_ && total_requests_ < 0) {
+            healthy = false;
+        }
+        
+        server_healthy_ = healthy;
+        
+        if (!healthy) {
+            std::cout << "⚠️ Health check failed" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        server_healthy_ = false;
+        std::cout << "❌ Health check error: " << e.what() << std::endl;
+    }
+}
+
+void WebServer::cleanup_resources() {
+    std::cout << "🧹 Cleaning up resources..." << std::endl;
+    
+    // Clear error log if too large
+    {
+        std::lock_guard<std::mutex> lock(error_mutex_);
+        if (error_log_.size() > 2000) {
+            error_log_.clear();
+        }
+    }
+    
+    // Clear cache if too large
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex_);
+        if (response_cache_.size() > max_cache_size_ * 1.5) {
+            clear_cache();
+        }
+    }
+    
+    // Reset analytics if corrupted
+    if (analytics_enabled_ && total_requests_ < 0) {
+        total_requests_ = 0;
+        total_responses_ = 0;
+        total_errors_ = 0;
+    }
+}
+
+void WebServer::restart_failed_components() {
+    std::cout << "🔄 Restarting failed components..." << std::endl;
+    
+    // Reset error counters
+    consecutive_errors_ = 0;
+    
+    // Reinitialize critical components
+    try {
+        // Reinitialize thread pool if needed
+        if (thread_pool_.size() == 0) {
+            thread_pool_.resize(4);
+        }
+        
+        // Clear corrupted cache entries
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex_);
+            auto it = response_cache_.begin();
+            while (it != response_cache_.end()) {
+                if (it->second.status_code < 200 || it->second.status_code >= 600) {
+                    it = response_cache_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        
+        std::cout << "✅ Component restart completed" << std::endl;
+    } catch (const std::exception& e) {
+        std::cout << "❌ Component restart failed: " << e.what() << std::endl;
+    }
+}
+
+HttpResponse WebServer::handle_error_status(const HttpRequest& req, HttpResponse& res) {
+    std::lock_guard<std::mutex> lock(error_mutex_);
+    
+    res.status_code = 200;
+    res.status_text = "OK";
+    res.headers["Content-Type"] = "application/json";
+    
+    std::stringstream json;
+    json << "{";
+    json << "\"server_healthy\":" << (server_healthy_ ? "true" : "false") << ",";
+    json << "\"total_errors\":" << total_errors_ << ",";
+    json << "\"consecutive_errors\":" << consecutive_errors_ << ",";
+    json << "\"auto_recovery_enabled\":" << (auto_recovery_enabled_ ? "true" : "false") << ",";
+    json << "\"last_health_check\":\"" << get_current_timestamp() << "\",";
+    json << "\"error_counts\":{";
+    
+    bool first = true;
+    for (const auto& pair : error_counts_) {
+        if (!first) json << ",";
+        json << "\"" << pair.first << "\":" << pair.second;
+        first = false;
+    }
+    json << "},";
+    
+    json << "\"recent_errors\":[";
+    first = true;
+    for (size_t i = std::max(0UL, error_log_.size() - 10); i < error_log_.size(); ++i) {
+        if (!first) json << ",";
+        json << "\"" << sanitize_input(error_log_[i]) << "\"";
+        first = false;
+    }
+    json << "]";
+    json << "}";
+    
+    res.body = json.str();
+    return res;
+}
+
+HttpResponse WebServer::handle_health_check(const HttpRequest& req, HttpResponse& res) {
+    perform_health_check();
+    
+    res.status_code = server_healthy_ ? 200 : 503;
+    res.status_text = server_healthy_ ? "OK" : "Service Unavailable";
+    res.headers["Content-Type"] = "application/json";
+    
+    std::stringstream json;
+    json << "{";
+    json << "\"status\":\"" << (server_healthy_ ? "healthy" : "unhealthy") << "\",";
+    json << "\"timestamp\":\"" << get_current_timestamp() << "\",";
+    json << "\"uptime\":\"" << get_uptime() << "\",";
+    json << "\"consecutive_errors\":" << consecutive_errors_ << ",";
+    json << "\"total_errors\":" << total_errors_ << ",";
+    json << "\"auto_recovery_enabled\":" << (auto_recovery_enabled_ ? "true" : "false");
+    json << "}";
+    
+    res.body = json.str();
     return res;
 }
 
