@@ -41,23 +41,23 @@ protected:
     LayerType type_;
     int input_size_;
     int output_size_;
-    Eigen::MatrixXd weights_;
-    Eigen::VectorXd biases_;
-    Eigen::MatrixXd activations_;
-    Eigen::MatrixXd gradients_;
+    Matrix weights_;
+    Vector biases_;
+    Matrix activations_;
+    Matrix gradients_;
     ActivationType activation_;
     
     // Cache for backward pass
-    Eigen::MatrixXd input_cache_;
-    Eigen::MatrixXd linear_cache_;
+    Matrix input_cache_;
+    Matrix linear_cache_;
 
 public:
     NeuralLayer(LayerType type, int input_size, int output_size, ActivationType activation = ActivationType::RELU);
     virtual ~NeuralLayer() = default;
     
     // Forward and backward propagation
-    virtual Eigen::MatrixXd forward(const Eigen::MatrixXd& input);
-    virtual Eigen::MatrixXd backward(const Eigen::MatrixXd& gradient);
+    virtual Matrix forward(const Matrix& input);
+    virtual Matrix backward(const Matrix& gradient);
     
     // Parameter management
     virtual void initialize_weights(double std_dev = 0.01);
@@ -68,24 +68,24 @@ public:
     LayerType get_type() const { return type_; }
     int get_input_size() const { return input_size_; }
     int get_output_size() const { return output_size_; }
-    const Eigen::MatrixXd& get_weights() const { return weights_; }
-    const Eigen::VectorXd& get_biases() const { return biases_; }
+    const Matrix& get_weights() const { return weights_; }
+    const Vector& get_biases() const { return biases_; }
     
     // Activation functions
-    static Eigen::MatrixXd relu(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd sigmoid(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd tanh(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd softmax(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd leaky_relu(const Eigen::MatrixXd& x, double alpha = 0.01);
-    static Eigen::MatrixXd elu(const Eigen::MatrixXd& x, double alpha = 1.0);
+    static Matrix relu(const Matrix& x);
+    static Matrix sigmoid(const Matrix& x);
+    static Matrix tanh(const Matrix& x);
+    static Matrix softmax(const Matrix& x);
+    static Matrix leaky_relu(const Matrix& x, double alpha = 0.01);
+    static Matrix elu(const Matrix& x, double alpha = 1.0);
     
     // Activation derivatives
-    static Eigen::MatrixXd relu_derivative(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd sigmoid_derivative(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd tanh_derivative(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd softmax_derivative(const Eigen::MatrixXd& x);
-    static Eigen::MatrixXd leaky_relu_derivative(const Eigen::MatrixXd& x, double alpha = 0.01);
-    static Eigen::MatrixXd elu_derivative(const Eigen::MatrixXd& x, double alpha = 1.0);
+    static Matrix relu_derivative(const Matrix& x);
+    static Matrix sigmoid_derivative(const Matrix& x);
+    static Matrix tanh_derivative(const Matrix& x);
+    static Matrix softmax_derivative(const Matrix& x);
+    static Matrix leaky_relu_derivative(const Matrix& x, double alpha = 0.01);
+    static Matrix elu_derivative(const Matrix& x, double alpha = 1.0);
 };
 
 // Dense Layer Implementation
@@ -93,8 +93,8 @@ class DenseLayer : public NeuralLayer {
 public:
     DenseLayer(int input_size, int output_size, ActivationType activation = ActivationType::RELU);
     
-    Eigen::MatrixXd forward(const Eigen::MatrixXd& input) override;
-    Eigen::MatrixXd backward(const Eigen::MatrixXd& gradient) override;
+    Matrix forward(const Matrix& input) override;
+    Matrix backward(const Matrix& gradient) override;
     void initialize_weights(double std_dev = 0.01) override;
 };
 
@@ -118,8 +118,8 @@ private:
     double learning_rate_;
     int batch_size_;
     int epochs_;
-    std::function<double(const Eigen::MatrixXd&, const Eigen::MatrixXd&)> loss_function_;
-    std::function<Eigen::MatrixXd(const Eigen::MatrixXd&, const Eigen::MatrixXd&)> loss_derivative_;
+    std::function<double(const Matrix&, const Matrix&)> loss_function_;
+    std::function<Matrix(const Matrix&, const Matrix&)> loss_derivative_;
 
 public:
     NeuralNetwork(double learning_rate = 0.01, int batch_size = 32);
@@ -130,16 +130,16 @@ public:
     void add_dropout_layer(double rate = 0.5);
     
     // Training
-    void fit(const Eigen::MatrixXd& X, const Eigen::MatrixXd& y, int epochs = 100);
-    Eigen::MatrixXd predict(const Eigen::MatrixXd& X);
-    double evaluate(const Eigen::MatrixXd& X, const Eigen::MatrixXd& y);
+    void fit(const Matrix& X, const Matrix& y, int epochs = 100);
+    Matrix predict(const Matrix& X);
+    double evaluate(const Matrix& X, const Matrix& y);
     
     // Loss functions
     void set_loss_function(const std::string& loss_type);
-    static double mse_loss(const Eigen::MatrixXd& y_true, const Eigen::MatrixXd& y_pred);
-    static double cross_entropy_loss(const Eigen::MatrixXd& y_true, const Eigen::MatrixXd& y_pred);
-    static Eigen::MatrixXd mse_derivative(const Eigen::MatrixXd& y_true, const Eigen::MatrixXd& y_pred);
-    static Eigen::MatrixXd cross_entropy_derivative(const Eigen::MatrixXd& y_true, const Eigen::MatrixXd& y_pred);
+    static double mse_loss(const Matrix& y_true, const Matrix& y_pred);
+    static double cross_entropy_loss(const Matrix& y_true, const Matrix& y_pred);
+    static Matrix mse_derivative(const Matrix& y_true, const Matrix& y_pred);
+    static Matrix cross_entropy_derivative(const Matrix& y_true, const Matrix& y_pred);
     
     // Model persistence
     bool save_model(const std::string& filepath);
@@ -150,10 +150,10 @@ public:
     void set_batch_size(int batch_size) { batch_size_ = batch_size; }
     
 private:
-    Eigen::MatrixXd forward_pass(const Eigen::MatrixXd& input);
-    void backward_pass(const Eigen::MatrixXd& input, const Eigen::MatrixXd& target);
+    Matrix forward_pass(const Matrix& input);
+    void backward_pass(const Matrix& input, const Matrix& target);
     void update_parameters();
-    std::vector<std::pair<Eigen::MatrixXd, Eigen::MatrixXd>> create_batches(const Eigen::MatrixXd& X, const Eigen::MatrixXd& y);
+    std::vector<std::pair<Matrix, Matrix>> create_batches(const Matrix& X, const Matrix& y);
 };
 
 // Ensemble Methods
@@ -170,12 +170,12 @@ public:
     RandomForest(int n_estimators = 100, int max_depth = 10, 
                 int min_samples_split = 2, int min_samples_leaf = 1);
     
-    void fit(const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
-    Eigen::VectorXd predict(const Eigen::MatrixXd& X);
-    double evaluate(const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
+    void fit(const Matrix& X, const Vector& y);
+    Vector predict(const Matrix& X);
+    double evaluate(const Matrix& X, const Vector& y);
     
     // Feature importance
-    Eigen::VectorXd get_feature_importance() const;
+    Vector get_feature_importance() const;
     
 private:
     std::vector<int> bootstrap_sample_indices(int n_samples);
@@ -201,14 +201,14 @@ private:
 public:
     DecisionTree(int max_depth = 10, int min_samples_split = 2, int min_samples_leaf = 1);
     
-    void fit(const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
-    Eigen::VectorXd predict(const Eigen::MatrixXd& X);
+    void fit(const Matrix& X, const Vector& y);
+    Vector predict(const Matrix& X);
     
 private:
-    std::unique_ptr<Node> build_tree(const Eigen::MatrixXd& X, const Eigen::VectorXd& y, int depth);
-    double find_best_split(const Eigen::MatrixXd& X, const Eigen::VectorXd& y, int& best_feature, double& best_threshold);
-    double calculate_gini(const Eigen::VectorXd& y);
-    double predict_single(const Eigen::VectorXd& x, const Node* node);
+    std::unique_ptr<Node> build_tree(const Matrix& X, const Vector& y, int depth);
+    double find_best_split(const Matrix& X, const Vector& y, int& best_feature, double& best_threshold);
+    double calculate_gini(const Vector& y);
+    double predict_single(const Vector& x, const Node* node);
 };
 
 // Gradient Boosting
@@ -218,17 +218,17 @@ private:
     double learning_rate_;
     int max_depth_;
     std::vector<std::unique_ptr<DecisionTree>> trees_;
-    Eigen::VectorXd initial_prediction_;
+    Vector initial_prediction_;
 
 public:
     GradientBoosting(int n_estimators = 100, double learning_rate = 0.1, int max_depth = 3);
     
-    void fit(const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
-    Eigen::VectorXd predict(const Eigen::MatrixXd& X);
-    double evaluate(const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
+    void fit(const Matrix& X, const Vector& y);
+    Vector predict(const Matrix& X);
+    double evaluate(const Matrix& X, const Vector& y);
     
 private:
-    Eigen::VectorXd calculate_gradients(const Eigen::VectorXd& y_true, const Eigen::VectorXd& y_pred);
+    Vector calculate_gradients(const Vector& y_true, const Vector& y_pred);
 };
 
 // Support Vector Machine
@@ -237,45 +237,45 @@ private:
     double C_;
     double epsilon_;
     std::string kernel_;
-    Eigen::VectorXd alphas_;
-    Eigen::VectorXd support_vectors_;
+    Vector alphas_;
+    Vector support_vectors_;
     double b_;
     bool trained_;
 
 public:
     SVM(double C = 1.0, double epsilon = 0.001, const std::string& kernel = "rbf");
     
-    void fit(const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
-    Eigen::VectorXd predict(const Eigen::MatrixXd& X);
-    double evaluate(const Eigen::MatrixXd& X, const Eigen::VectorXd& y);
+    void fit(const Matrix& X, const Vector& y);
+    Vector predict(const Matrix& X);
+    double evaluate(const Matrix& X, const Vector& y);
     
 private:
-    double kernel_function(const Eigen::VectorXd& x1, const Eigen::VectorXd& x2);
-    double rbf_kernel(const Eigen::VectorXd& x1, const Eigen::VectorXd& x2, double gamma = 1.0);
-    double linear_kernel(const Eigen::VectorXd& x1, const Eigen::VectorXd& x2);
-    double polynomial_kernel(const Eigen::VectorXd& x1, const Eigen::VectorXd& x2, int degree = 3);
+    double kernel_function(const Vector& x1, const Vector& x2);
+    double rbf_kernel(const Vector& x1, const Vector& x2, double gamma = 1.0);
+    double linear_kernel(const Vector& x1, const Vector& x2);
+    double polynomial_kernel(const Vector& x1, const Vector& x2, int degree = 3);
 };
 
 // Principal Component Analysis
 class PCA {
 private:
     int n_components_;
-    Eigen::MatrixXd components_;
-    Eigen::VectorXd explained_variance_;
-    Eigen::VectorXd mean_;
+    Matrix components_;
+    Vector explained_variance_;
+    Vector mean_;
     bool fitted_;
 
 public:
     PCA(int n_components = 2);
     
-    void fit(const Eigen::MatrixXd& X);
-    Eigen::MatrixXd transform(const Eigen::MatrixXd& X);
-    Eigen::MatrixXd inverse_transform(const Eigen::MatrixXd& X_transformed);
+    void fit(const Matrix& X);
+    Matrix transform(const Matrix& X);
+    Matrix inverse_transform(const Matrix& X_transformed);
     double explained_variance_ratio(int component) const;
-    Eigen::VectorXd get_explained_variance_ratio() const;
+    Vector get_explained_variance_ratio() const;
     
 private:
-    void compute_eigenvalues_eigenvectors(const Eigen::MatrixXd& covariance_matrix);
+    void compute_eigenvalues_eigenvectors(const Matrix& covariance_matrix);
 };
 
 // Autoencoder for Dimensionality Reduction
@@ -289,10 +289,10 @@ private:
 public:
     Autoencoder(int input_dim, int encoding_dim, const std::vector<int>& hidden_layers = {64, 32});
     
-    void fit(const Eigen::MatrixXd& X, int epochs = 100);
-    Eigen::MatrixXd encode(const Eigen::MatrixXd& X);
-    Eigen::MatrixXd decode(const Eigen::MatrixXd& encoded);
-    Eigen::MatrixXd reconstruct(const Eigen::MatrixXd& X);
+    void fit(const Matrix& X, int epochs = 100);
+    Matrix encode(const Matrix& X);
+    Matrix decode(const Matrix& encoded);
+    Matrix reconstruct(const Matrix& X);
     double get_reconstruction_loss() const { return reconstruction_loss_; }
     
 private:

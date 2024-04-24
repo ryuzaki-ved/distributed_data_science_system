@@ -316,12 +316,12 @@ public:
     }
     
     Matrix cwiseProduct(const Matrix& other) const {
-        if (rows_ != other.rows_ || cols_ != other.cols_) {
+        if (this->rows() != other.rows() || this->cols() != other.cols_) {
             return Matrix();
         }
-        Matrix result(rows_, cols_);
-        for (Index i = 0; i < data_.size(); ++i) {
-            result.data_[i] = data_[i] * other.data_[i];
+        Matrix result(this->rows(), this->cols());
+        for (Index i = 0; i < this->size(); ++i) {
+            result.data()[i] = (*this)[i] * other.data()[i];
         }
         return result;
     }
