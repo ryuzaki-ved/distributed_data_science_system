@@ -101,12 +101,9 @@ private:
     // Error handling and recovery members
     std::atomic<bool> server_healthy_;
     std::atomic<size_t> consecutive_errors_;
-    std::atomic<size_t> total_errors_;
     std::map<std::string, size_t> error_counts_;
     std::vector<std::string> error_log_;
     std::mutex error_mutex_;
-    std::chrono::steady_clock::time_point last_health_check_;
-    std::chrono::seconds health_check_interval_;
     std::string error_log_file_;
     bool auto_recovery_enabled_;
     
@@ -266,7 +263,7 @@ public:
     // Routing framework
     void add_middleware(const std::string& name, MiddlewareHandler middleware);
     void add_route_group(const std::string& prefix, const std::vector<RouteDefinition>& routes);
-    std::optional<RouteHandler> find_route(const std::string& method, const std::string& path);
+    RouteHandler find_route(const std::string& method, const std::string& path);
     HttpResponse execute_middleware_stack(const HttpRequest& req, RouteHandler route_handler);
     HttpResponse list_routes(const HttpRequest& req, HttpResponse& res);
     HttpResponse list_middleware(const HttpRequest& req, HttpResponse& res);
@@ -303,7 +300,6 @@ public:
     HttpResponse handle_endpoint_analytics(const HttpRequest& req, HttpResponse& res);
 
     // Advanced caching methods
-    std::optional<HttpResponse> get_cached_response(const std::string& cache_key);
     void cache_response(const std::string& cache_key, const HttpResponse& response);
     void invalidate_cache(const std::string& cache_key);
     void clear_cache();
@@ -472,7 +468,6 @@ public:
     bool validate_csrf_token(const std::string& token);
     void add_security_headers(HttpResponse& res);
     std::string hash_password(const std::string& password);
-    bool verify_password(const std::string& password, const std::string& hash);
     std::string generate_secure_random_string(size_t length);
     bool is_rate_limited_by_ip(const std::string& ip);
     void log_security_event(const std::string& event, const std::string& ip, const std::string& details);
@@ -512,21 +507,9 @@ private:
     std::vector<std::string> split_string(const std::string& str, char delimiter);
     
     // Monitoring helper methods
-    void perform_health_check();
-    double calculate_average_response_time();
-    size_t calculate_cache_hit_rate();
-    long get_uptime_seconds();
-    size_t get_memory_usage_mb();
-    double get_cpu_usage_percent();
-    std::string get_last_health_check_timestamp();
-    std::vector<double> get_response_time_history();
-    std::vector<size_t> get_memory_usage_history();
-    std::vector<double> get_cpu_usage_history();
     void update_monitoring_data(double response_time, size_t memory_usage, double cpu_usage);
     
     // Bandwidth optimization methods
-    std::optional<std::string> compress_content(const std::string& content);
-    std::optional<std::string> decompress_content(const std::string& compressed_content);
     bool should_compress_content(const std::string& content_type, size_t content_length);
     void optimize_response_headers(HttpResponse& response);
     int get_adaptive_compression_level(const std::string& content_type, size_t content_length);
@@ -534,7 +517,6 @@ private:
     void update_bandwidth_usage(const std::string& client_ip, size_t bytes_sent);
     double get_bandwidth_usage_rate(const std::string& client_ip);
     void pre_compress_static_content();
-    std::optional<std::string> get_pre_compressed_content(const std::string& content_key);
     void cache_compressed_content(const std::string& content_key, const std::string& compressed_content);
     bool supports_compression(const std::map<std::string, std::string>& headers);
     std::string get_optimal_encoding(const std::map<std::string, std::string>& headers);
