@@ -26,7 +26,18 @@ void NeuralLayer::initialize_weights(double std_dev) {
 }
 
 void NeuralLayer::update_weights(double learning_rate) {
-    // Stub implementation
+    // Update weights using gradient descent
+    // weights = weights - learning_rate * gradients
+    for (int i = 0; i < weights_.rows(); ++i) {
+        for (int j = 0; j < weights_.cols(); ++j) {
+            weights_(i, j) -= learning_rate * gradients_(i, j);
+        }
+    }
+    
+    // Update biases
+    for (int i = 0; i < biases_.size(); ++i) {
+        biases_(i) -= learning_rate * gradients_(i, 0);
+    }
 }
 
 void NeuralLayer::zero_gradients() {
@@ -35,52 +46,139 @@ void NeuralLayer::zero_gradients() {
 
 // Activation functions
 Eigen::MatrixXd NeuralLayer::relu(const Eigen::MatrixXd& x) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = std::max(0.0, x(i, j));
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::sigmoid(const Eigen::MatrixXd& x) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = 1.0 / (1.0 + std::exp(-x(i, j)));
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::tanh(const Eigen::MatrixXd& x) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = std::tanh(x(i, j));
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::softmax(const Eigen::MatrixXd& x) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int j = 0; j < x.cols(); ++j) {
+        double max_val = x.col(j).maxCoeff();
+        double sum = 0.0;
+        
+        // Compute exp(x - max) for numerical stability
+        for (int i = 0; i < x.rows(); ++i) {
+            result(i, j) = std::exp(x(i, j) - max_val);
+            sum += result(i, j);
+        }
+        
+        // Normalize
+        for (int i = 0; i < x.rows(); ++i) {
+            result(i, j) /= sum;
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::leaky_relu(const Eigen::MatrixXd& x, double alpha) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = (x(i, j) > 0) ? x(i, j) : alpha * x(i, j);
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::elu(const Eigen::MatrixXd& x, double alpha) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = (x(i, j) > 0) ? x(i, j) : alpha * (std::exp(x(i, j)) - 1);
+        }
+    }
+    return result;
 }
 
 // Activation derivatives
 Eigen::MatrixXd NeuralLayer::relu_derivative(const Eigen::MatrixXd& x) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = (x(i, j) > 0) ? 1.0 : 0.0;
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::sigmoid_derivative(const Eigen::MatrixXd& x) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double sigmoid_val = 1.0 / (1.0 + std::exp(-x(i, j)));
+            result(i, j) = sigmoid_val * (1.0 - sigmoid_val);
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::tanh_derivative(const Eigen::MatrixXd& x) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double tanh_val = std::tanh(x(i, j));
+            result(i, j) = 1.0 - tanh_val * tanh_val;
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::softmax_derivative(const Eigen::MatrixXd& x) {
-    return x;
+    // For softmax, the derivative is more complex and depends on the output
+    // This is a simplified version - in practice, you'd use the softmax output
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            // This is a placeholder - actual softmax derivative requires the softmax output
+            result(i, j) = x(i, j) * (1.0 - x(i, j));
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::leaky_relu_derivative(const Eigen::MatrixXd& x, double alpha) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = (x(i, j) > 0) ? 1.0 : alpha;
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::elu_derivative(const Eigen::MatrixXd& x, double alpha) {
-    return x;
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = (x(i, j) > 0) ? 1.0 : alpha * std::exp(x(i, j));
+        }
+    }
+    return result;
 }
 
 // DenseLayer implementation
@@ -89,15 +187,103 @@ DenseLayer::DenseLayer(int input_size, int output_size, ActivationType activatio
 }
 
 Eigen::MatrixXd DenseLayer::forward(const Eigen::MatrixXd& input) {
-    return input;
+    // Store input for backward pass
+    input_cache_ = input;
+    
+    // Compute linear transformation: output = input * weights^T + bias
+    Eigen::MatrixXd linear_output = input * weights_.transpose();
+    
+    // Add bias to each sample
+    for (int i = 0; i < linear_output.rows(); ++i) {
+        linear_output.row(i) += biases_.transpose();
+    }
+    
+    // Store linear output for backward pass
+    linear_cache_ = linear_output;
+    
+    // Apply activation function
+    Eigen::MatrixXd activated_output;
+    switch (activation_) {
+        case ActivationType::RELU:
+            activated_output = relu(linear_output);
+            break;
+        case ActivationType::SIGMOID:
+            activated_output = sigmoid(linear_output);
+            break;
+        case ActivationType::TANH:
+            activated_output = tanh(linear_output);
+            break;
+        case ActivationType::SOFTMAX:
+            activated_output = softmax(linear_output);
+            break;
+        case ActivationType::LEAKY_RELU:
+            activated_output = leaky_relu(linear_output);
+            break;
+        case ActivationType::ELU:
+            activated_output = elu(linear_output);
+            break;
+        default:
+            activated_output = linear_output; // No activation
+    }
+    
+    // Store activated output for backward pass
+    activations_ = activated_output;
+    return activated_output;
 }
 
 Eigen::MatrixXd DenseLayer::backward(const Eigen::MatrixXd& gradient) {
-    return gradient;
+    // Compute gradient with respect to activation
+    Eigen::MatrixXd activation_gradient;
+    switch (activation_) {
+        case ActivationType::RELU:
+            activation_gradient = gradient.cwiseProduct(relu_derivative(linear_cache_));
+            break;
+        case ActivationType::SIGMOID:
+            activation_gradient = gradient.cwiseProduct(sigmoid_derivative(linear_cache_));
+            break;
+        case ActivationType::TANH:
+            activation_gradient = gradient.cwiseProduct(tanh_derivative(linear_cache_));
+            break;
+        case ActivationType::SOFTMAX:
+            activation_gradient = gradient.cwiseProduct(softmax_derivative(linear_cache_));
+            break;
+        case ActivationType::LEAKY_RELU:
+            activation_gradient = gradient.cwiseProduct(leaky_relu_derivative(linear_cache_));
+            break;
+        case ActivationType::ELU:
+            activation_gradient = gradient.cwiseProduct(elu_derivative(linear_cache_));
+            break;
+        default:
+            activation_gradient = gradient; // No activation
+    }
+    
+    // Compute gradients for weights and biases
+    gradients_ = activation_gradient;
+    
+    // Gradient with respect to input (for backpropagation to previous layer)
+    Eigen::MatrixXd input_gradient = activation_gradient * weights_;
+    
+    return input_gradient;
 }
 
 void DenseLayer::initialize_weights(double std_dev) {
-    // Stub implementation
+    // Initialize weights with Xavier/Glorot initialization
+    double limit = std_dev * std::sqrt(6.0 / (input_size_ + output_size_));
+    
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> dis(-limit, limit);
+    
+    for (int i = 0; i < weights_.rows(); ++i) {
+        for (int j = 0; j < weights_.cols(); ++j) {
+            weights_(i, j) = dis(gen);
+        }
+    }
+    
+    // Initialize biases to small random values
+    for (int i = 0; i < biases_.size(); ++i) {
+        biases_(i) = dis(gen) * 0.1; // Smaller bias initialization
+    }
 }
 
 // DropoutLayer implementation

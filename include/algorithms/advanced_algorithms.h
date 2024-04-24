@@ -46,6 +46,10 @@ protected:
     Eigen::MatrixXd activations_;
     Eigen::MatrixXd gradients_;
     ActivationType activation_;
+    
+    // Cache for backward pass
+    Eigen::MatrixXd input_cache_;
+    Eigen::MatrixXd linear_cache_;
 
 public:
     NeuralLayer(LayerType type, int input_size, int output_size, ActivationType activation = ActivationType::RELU);

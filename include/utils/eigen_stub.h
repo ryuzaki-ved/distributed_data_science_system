@@ -208,12 +208,21 @@ public:
     }
     
     // Row and column access
+    // Row operations
     Matrix row(Index i) const {
         Matrix result(1, cols_);
         for (Index j = 0; j < cols_; ++j) {
             result(0, j) = (*this)(i, j);
         }
         return result;
+    }
+    
+    void row(Index i, const Matrix& new_row) {
+        if (new_row.rows() == 1 && new_row.cols() == cols_) {
+            for (Index j = 0; j < cols_; ++j) {
+                (*this)(i, j) = new_row(0, j);
+            }
+        }
     }
     
     Matrix col(Index j) const {
@@ -304,6 +313,17 @@ public:
             if ((*this)[i] > max_val) max_val = (*this)[i];
         }
         return max_val;
+    }
+    
+    Matrix cwiseProduct(const Matrix& other) const {
+        if (rows_ != other.rows_ || cols_ != other.cols_) {
+            return Matrix();
+        }
+        Matrix result(rows_, cols_);
+        for (Index i = 0; i < data_.size(); ++i) {
+            result.data_[i] = data_[i] * other.data_[i];
+        }
+        return result;
     }
     
     Scalar squaredNorm() const {
