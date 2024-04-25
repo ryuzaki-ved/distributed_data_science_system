@@ -32,7 +32,13 @@ enum class ActivationType {
     TANH,
     SOFTMAX,
     LEAKY_RELU,
-    ELU
+    ELU,
+    SWISH,
+    GELU,
+    MISH,
+    SELU,
+    HARD_SIGMOID,
+    HARD_SWISH
 };
 
 // Neural Network Layer
@@ -78,6 +84,12 @@ public:
     static Matrix softmax(const Matrix& x);
     static Matrix leaky_relu(const Matrix& x, double alpha = 0.01);
     static Matrix elu(const Matrix& x, double alpha = 1.0);
+    static Matrix swish(const Matrix& x, double beta = 1.0);
+    static Matrix gelu(const Matrix& x);
+    static Matrix mish(const Matrix& x);
+    static Matrix selu(const Matrix& x);
+    static Matrix hard_sigmoid(const Matrix& x);
+    static Matrix hard_swish(const Matrix& x);
     
     // Activation derivatives
     static Matrix relu_derivative(const Matrix& x);
@@ -86,6 +98,12 @@ public:
     static Matrix softmax_derivative(const Matrix& x);
     static Matrix leaky_relu_derivative(const Matrix& x, double alpha = 0.01);
     static Matrix elu_derivative(const Matrix& x, double alpha = 1.0);
+    static Matrix swish_derivative(const Matrix& x, double beta = 1.0);
+    static Matrix gelu_derivative(const Matrix& x);
+    static Matrix mish_derivative(const Matrix& x);
+    static Matrix selu_derivative(const Matrix& x);
+    static Matrix hard_sigmoid_derivative(const Matrix& x);
+    static Matrix hard_swish_derivative(const Matrix& x);
 };
 
 // Dense Layer Implementation
