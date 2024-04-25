@@ -180,7 +180,7 @@ int main() {
     // Test Advanced Algorithms
     std::cout << "\n=== Testing Advanced Algorithms ===" << std::endl;
     try {
-        // Create a simple neural network
+        // Create a simple neural network with new activation functions
         auto neural_net = dds::algorithms::ModelFactory::create_neural_network({10, 5, 1}, 0.01);
         std::cout << "✅ Neural Network created successfully" << std::endl;
         
@@ -188,9 +188,34 @@ int main() {
         auto random_forest = dds::algorithms::ModelFactory::create_random_forest(10, 5);
         std::cout << "✅ Random Forest created successfully" << std::endl;
         
+        // Create XGBoost
+        auto xgboost = dds::algorithms::ModelFactory::create_xgboost(100, 0.1, 6, 1.0);
+        std::cout << "✅ XGBoost created successfully" << std::endl;
+        
+        // Create LightGBM
+        auto lightgbm = dds::algorithms::ModelFactory::create_lightgbm(100, 0.1, 31, 0.0);
+        std::cout << "✅ LightGBM created successfully" << std::endl;
+        
+        // Create CatBoost
+        auto catboost = dds::algorithms::ModelFactory::create_catboost(1000, 0.03, 6, 3.0);
+        std::cout << "✅ CatBoost created successfully" << std::endl;
+        
         // Create PCA
         auto pca = dds::algorithms::ModelFactory::create_pca(2);
         std::cout << "✅ PCA created successfully" << std::endl;
+        
+        std::cout << "\n🔥 New Activation Functions Available:" << std::endl;
+        std::cout << "  • SWISH (Self-gated activation)" << std::endl;
+        std::cout << "  • GELU (Gaussian Error Linear Unit)" << std::endl;
+        std::cout << "  • MISH (Self regularized non-monotonic)" << std::endl;
+        std::cout << "  • SELU (Scaled Exponential Linear Unit)" << std::endl;
+        std::cout << "  • HARD_SIGMOID (Fast approximation)" << std::endl;
+        std::cout << "  • HARD_SWISH (MobileNet activation)" << std::endl;
+        
+        std::cout << "\n🚀 New Gradient Boosting Algorithms:" << std::endl;
+        std::cout << "  • XGBoost: Extreme Gradient Boosting with regularization" << std::endl;
+        std::cout << "  • LightGBM: Fast gradient boosting with leaf-wise growth" << std::endl;
+        std::cout << "  • CatBoost: Gradient boosting with categorical features support" << std::endl;
         
     } catch (const std::exception& e) {
         std::cout << "❌ Advanced algorithms test failed: " << e.what() << std::endl;
