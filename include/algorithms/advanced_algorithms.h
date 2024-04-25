@@ -249,6 +249,129 @@ private:
     Vector calculate_gradients(const Vector& y_true, const Vector& y_pred);
 };
 
+// XGBoost-style Gradient Boosting
+class XGBoost {
+private:
+    int n_estimators_;
+    double learning_rate_;
+    int max_depth_;
+    double reg_lambda_;
+    double reg_alpha_;
+    double gamma_;
+    double min_child_weight_;
+    double subsample_;
+    double colsample_bytree_;
+    std::string objective_;
+    std::vector<std::unique_ptr<DecisionTree>> trees_;
+    Vector initial_prediction_;
+    bool early_stopping_;
+    int early_stopping_rounds_;
+
+public:
+    XGBoost(int n_estimators = 100, double learning_rate = 0.1, int max_depth = 6,
+            double reg_lambda = 1.0, double reg_alpha = 0.0, double gamma = 0.0,
+            double min_child_weight = 1.0, double subsample = 1.0, 
+            double colsample_bytree = 1.0, const std::string& objective = "reg:squarederror");
+    
+    void fit(const Matrix& X, const Vector& y, const Matrix& X_val = Matrix(), const Vector& y_val = Vector());
+    Vector predict(const Matrix& X);
+    double evaluate(const Matrix& X, const Vector& y);
+    Vector get_feature_importance() const;
+    
+    // Hyperparameter setters
+    void set_early_stopping(bool enable, int rounds = 10);
+    void set_regularization(double lambda, double alpha);
+    void set_sampling(double subsample, double colsample_bytree);
+    
+private:
+    Vector calculate_gradients(const Vector& y_true, const Vector& y_pred);
+    Vector calculate_hessians(const Vector& y_true, const Vector& y_pred);
+    double calculate_gain(const Vector& gradients, const Vector& hessians, 
+                         const std::vector<int>& left_indices, const std::vector<int>& right_indices);
+    bool should_stop_early(const std::vector<double>& validation_scores);
+};
+
+// LightGBM-style Gradient Boosting
+class LightGBM {
+private:
+    int n_estimators_;
+    double learning_rate_;
+    int max_depth_;
+    int num_leaves_;
+    double min_split_gain_;
+    double min_child_weight_;
+    double min_child_samples_;
+    double subsample_;
+    double colsample_bytree_;
+    double reg_alpha_;
+    double reg_lambda_;
+    std::string objective_;
+    std::string boosting_type_;
+    std::vector<std::unique_ptr<DecisionTree>> trees_;
+    Vector initial_prediction_;
+    bool feature_fraction_seed_;
+    bool bagging_seed_;
+
+public:
+    LightGBM(int n_estimators = 100, double learning_rate = 0.1, int num_leaves = 31,
+             int max_depth = -1, double min_split_gain = 0.0, double min_child_weight = 0.001,
+             double min_child_samples = 20, double subsample = 1.0, double colsample_bytree = 1.0,
+             double reg_alpha = 0.0, double reg_lambda = 0.0, 
+             const std::string& objective = "regression", const std::string& boosting_type = "gbdt");
+    
+    void fit(const Matrix& X, const Vector& y);
+    Vector predict(const Matrix& X);
+    double evaluate(const Matrix& X, const Vector& y);
+    Vector get_feature_importance() const;
+    
+    // Advanced features
+    void set_categorical_features(const std::vector<int>& categorical_features);
+    void set_early_stopping(int rounds, double tolerance = 1e-4);
+    
+private:
+    Vector calculate_gradients(const Vector& y_true, const Vector& y_pred);
+    Vector calculate_hessians(const Vector& y_true, const Vector& y_pred);
+    std::vector<int> get_leaf_samples(const Matrix& X, const std::vector<int>& sample_indices);
+    double calculate_leaf_value(const Vector& gradients, const Vector& hessians, 
+                               const std::vector<int>& leaf_indices);
+};
+
+// CatBoost-style Gradient Boosting  
+class CatBoost {
+private:
+    int n_estimators_;
+    double learning_rate_;
+    int max_depth_;
+    double l2_leaf_reg_;
+    double random_strength_;
+    double bagging_temperature_;
+    int border_count_;
+    std::string loss_function_;
+    std::vector<int> categorical_features_;
+    std::vector<std::unique_ptr<DecisionTree>> trees_;
+    Vector initial_prediction_;
+    bool use_best_model_;
+    
+public:
+    CatBoost(int n_estimators = 1000, double learning_rate = 0.03, int max_depth = 6,
+             double l2_leaf_reg = 3.0, double random_strength = 1.0, double bagging_temperature = 1.0,
+             int border_count = 128, const std::string& loss_function = "RMSE");
+    
+    void fit(const Matrix& X, const Vector& y, const std::vector<int>& categorical_features = {});
+    Vector predict(const Matrix& X);
+    double evaluate(const Matrix& X, const Vector& y);
+    Vector get_feature_importance() const;
+    
+    // CatBoost specific features
+    void set_categorical_features(const std::vector<int>& categorical_features);
+    void enable_gpu_training(bool enable = true);
+    
+private:
+    Vector calculate_gradients(const Vector& y_true, const Vector& y_pred);
+    Matrix encode_categorical_features(const Matrix& X);
+    double calculate_ordered_boosting_score(const Vector& gradients, const Vector& hessians);
+};
+
 // Support Vector Machine
 class SVM {
 private:
@@ -326,6 +449,12 @@ public:
                                                              int max_depth = 10);
     static std::unique_ptr<GradientBoosting> create_gradient_boosting(int n_estimators = 100, 
                                                                      double learning_rate = 0.1);
+    static std::unique_ptr<XGBoost> create_xgboost(int n_estimators = 100, double learning_rate = 0.1,
+                                                   int max_depth = 6, double reg_lambda = 1.0);
+    static std::unique_ptr<LightGBM> create_lightgbm(int n_estimators = 100, double learning_rate = 0.1,
+                                                     int num_leaves = 31, double min_split_gain = 0.0);
+    static std::unique_ptr<CatBoost> create_catboost(int n_estimators = 1000, double learning_rate = 0.03,
+                                                     int max_depth = 6, double l2_leaf_reg = 3.0);
     static std::unique_ptr<SVM> create_svm(double C = 1.0, const std::string& kernel = "rbf");
     static std::unique_ptr<PCA> create_pca(int n_components = 2);
     static std::unique_ptr<Autoencoder> create_autoencoder(int input_dim, int encoding_dim);

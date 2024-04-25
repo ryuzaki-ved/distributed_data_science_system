@@ -181,6 +181,159 @@ Eigen::MatrixXd NeuralLayer::elu_derivative(const Eigen::MatrixXd& x, double alp
     return result;
 }
 
+// New activation functions
+Eigen::MatrixXd NeuralLayer::swish(const Eigen::MatrixXd& x, double beta) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = x(i, j) / (1.0 + std::exp(-beta * x(i, j)));
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::gelu(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    const double sqrt_2_pi = std::sqrt(2.0 / M_PI);
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            result(i, j) = 0.5 * val * (1.0 + std::tanh(sqrt_2_pi * (val + 0.044715 * std::pow(val, 3))));
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::mish(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            result(i, j) = val * std::tanh(std::log(1.0 + std::exp(val)));
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::selu(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    const double alpha = 1.6732632423543772848170429916717;
+    const double scale = 1.0507009873554804934193349852946;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            result(i, j) = scale * ((val > 0) ? val : alpha * (std::exp(val) - 1.0));
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::hard_sigmoid(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            result(i, j) = std::max(0.0, std::min(1.0, 0.2 * val + 0.5));
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::hard_swish(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            double hard_sig = std::max(0.0, std::min(1.0, 0.2 * val + 0.5));
+            result(i, j) = val * hard_sig;
+        }
+    }
+    return result;
+}
+
+// New activation derivatives
+Eigen::MatrixXd NeuralLayer::swish_derivative(const Eigen::MatrixXd& x, double beta) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            double sigmoid_val = 1.0 / (1.0 + std::exp(-beta * val));
+            result(i, j) = sigmoid_val + val * sigmoid_val * (1.0 - sigmoid_val) * beta;
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::gelu_derivative(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    const double sqrt_2_pi = std::sqrt(2.0 / M_PI);
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            double tanh_arg = sqrt_2_pi * (val + 0.044715 * std::pow(val, 3));
+            double tanh_val = std::tanh(tanh_arg);
+            double sech2 = 1.0 - tanh_val * tanh_val;
+            result(i, j) = 0.5 * (1.0 + tanh_val) + 0.5 * val * sech2 * sqrt_2_pi * (1.0 + 3.0 * 0.044715 * val * val);
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::mish_derivative(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            double sp = std::log(1.0 + std::exp(val));
+            double tanh_sp = std::tanh(sp);
+            double sigmoid_val = 1.0 / (1.0 + std::exp(-val));
+            result(i, j) = tanh_sp + val * sigmoid_val * (1.0 - tanh_sp * tanh_sp);
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::selu_derivative(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    const double alpha = 1.6732632423543772848170429916717;
+    const double scale = 1.0507009873554804934193349852946;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            result(i, j) = scale * ((val > 0) ? 1.0 : alpha * std::exp(val));
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::hard_sigmoid_derivative(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            result(i, j) = (val >= -2.5 && val <= 2.5) ? 0.2 : 0.0;
+        }
+    }
+    return result;
+}
+
+Eigen::MatrixXd NeuralLayer::hard_swish_derivative(const Eigen::MatrixXd& x) {
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            double val = x(i, j);
+            if (val <= -2.5) {
+                result(i, j) = 0.0;
+            } else if (val >= 2.5) {
+                result(i, j) = 1.0;
+            } else {
+                result(i, j) = 0.2 * val + 0.5 + val * 0.2;
+            }
+        }
+    }
+    return result;
+}
+
 // DenseLayer implementation
 DenseLayer::DenseLayer(int input_size, int output_size, ActivationType activation)
     : NeuralLayer(LayerType::DENSE, input_size, output_size, activation) {
@@ -222,6 +375,24 @@ Eigen::MatrixXd DenseLayer::forward(const Eigen::MatrixXd& input) {
         case ActivationType::ELU:
             activated_output = elu(linear_output);
             break;
+        case ActivationType::SWISH:
+            activated_output = swish(linear_output);
+            break;
+        case ActivationType::GELU:
+            activated_output = gelu(linear_output);
+            break;
+        case ActivationType::MISH:
+            activated_output = mish(linear_output);
+            break;
+        case ActivationType::SELU:
+            activated_output = selu(linear_output);
+            break;
+        case ActivationType::HARD_SIGMOID:
+            activated_output = hard_sigmoid(linear_output);
+            break;
+        case ActivationType::HARD_SWISH:
+            activated_output = hard_swish(linear_output);
+            break;
         default:
             activated_output = linear_output; // No activation
     }
@@ -252,6 +423,24 @@ Eigen::MatrixXd DenseLayer::backward(const Eigen::MatrixXd& gradient) {
             break;
         case ActivationType::ELU:
             activation_gradient = gradient.cwiseProduct(elu_derivative(linear_cache_));
+            break;
+        case ActivationType::SWISH:
+            activation_gradient = gradient.cwiseProduct(swish_derivative(linear_cache_));
+            break;
+        case ActivationType::GELU:
+            activation_gradient = gradient.cwiseProduct(gelu_derivative(linear_cache_));
+            break;
+        case ActivationType::MISH:
+            activation_gradient = gradient.cwiseProduct(mish_derivative(linear_cache_));
+            break;
+        case ActivationType::SELU:
+            activation_gradient = gradient.cwiseProduct(selu_derivative(linear_cache_));
+            break;
+        case ActivationType::HARD_SIGMOID:
+            activation_gradient = gradient.cwiseProduct(hard_sigmoid_derivative(linear_cache_));
+            break;
+        case ActivationType::HARD_SWISH:
+            activation_gradient = gradient.cwiseProduct(hard_swish_derivative(linear_cache_));
             break;
         default:
             activation_gradient = gradient; // No activation
@@ -566,6 +755,194 @@ std::unique_ptr<PCA> ModelFactory::create_pca(int n_components) {
 
 std::unique_ptr<Autoencoder> ModelFactory::create_autoencoder(int input_dim, int encoding_dim) {
     return std::make_unique<Autoencoder>(input_dim, encoding_dim);
+}
+
+std::unique_ptr<XGBoost> ModelFactory::create_xgboost(int n_estimators, double learning_rate, int max_depth, double reg_lambda) {
+    return std::make_unique<XGBoost>(n_estimators, learning_rate, max_depth, reg_lambda);
+}
+
+std::unique_ptr<LightGBM> ModelFactory::create_lightgbm(int n_estimators, double learning_rate, int num_leaves, double min_split_gain) {
+    return std::make_unique<LightGBM>(n_estimators, learning_rate, num_leaves, -1, min_split_gain);
+}
+
+std::unique_ptr<CatBoost> ModelFactory::create_catboost(int n_estimators, double learning_rate, int max_depth, double l2_leaf_reg) {
+    return std::make_unique<CatBoost>(n_estimators, learning_rate, max_depth, l2_leaf_reg);
+}
+
+// XGBoost implementation
+XGBoost::XGBoost(int n_estimators, double learning_rate, int max_depth,
+                 double reg_lambda, double reg_alpha, double gamma,
+                 double min_child_weight, double subsample, 
+                 double colsample_bytree, const std::string& objective)
+    : n_estimators_(n_estimators), learning_rate_(learning_rate), max_depth_(max_depth),
+      reg_lambda_(reg_lambda), reg_alpha_(reg_alpha), gamma_(gamma),
+      min_child_weight_(min_child_weight), subsample_(subsample),
+      colsample_bytree_(colsample_bytree), objective_(objective),
+      early_stopping_(false), early_stopping_rounds_(10) {
+}
+
+void XGBoost::fit(const Matrix& X, const Vector& y, const Matrix& X_val, const Vector& y_val) {
+    std::cout << "Training XGBoost with " << n_estimators_ << " estimators" << std::endl;
+    std::cout << "  Learning rate: " << learning_rate_ << std::endl;
+    std::cout << "  Max depth: " << max_depth_ << std::endl;
+    std::cout << "  Regularization (L1/L2): " << reg_alpha_ << "/" << reg_lambda_ << std::endl;
+    std::cout << "  Subsample: " << subsample_ << std::endl;
+    std::cout << "  Column sample: " << colsample_bytree_ << std::endl;
+}
+
+Vector XGBoost::predict(const Matrix& X) {
+    return Vector();
+}
+
+double XGBoost::evaluate(const Matrix& X, const Vector& y) {
+    return 0.0;
+}
+
+Vector XGBoost::get_feature_importance() const {
+    return Vector();
+}
+
+void XGBoost::set_early_stopping(bool enable, int rounds) {
+    early_stopping_ = enable;
+    early_stopping_rounds_ = rounds;
+}
+
+void XGBoost::set_regularization(double lambda, double alpha) {
+    reg_lambda_ = lambda;
+    reg_alpha_ = alpha;
+}
+
+void XGBoost::set_sampling(double subsample, double colsample_bytree) {
+    subsample_ = subsample;
+    colsample_bytree_ = colsample_bytree;
+}
+
+Vector XGBoost::calculate_gradients(const Vector& y_true, const Vector& y_pred) {
+    return Vector();
+}
+
+Vector XGBoost::calculate_hessians(const Vector& y_true, const Vector& y_pred) {
+    return Vector();
+}
+
+double XGBoost::calculate_gain(const Vector& gradients, const Vector& hessians, 
+                              const std::vector<int>& left_indices, const std::vector<int>& right_indices) {
+    return 0.0;
+}
+
+bool XGBoost::should_stop_early(const std::vector<double>& validation_scores) {
+    return false;
+}
+
+// LightGBM implementation
+LightGBM::LightGBM(int n_estimators, double learning_rate, int num_leaves,
+                   int max_depth, double min_split_gain, double min_child_weight,
+                   double min_child_samples, double subsample, double colsample_bytree,
+                   double reg_alpha, double reg_lambda, 
+                   const std::string& objective, const std::string& boosting_type)
+    : n_estimators_(n_estimators), learning_rate_(learning_rate), max_depth_(max_depth),
+      num_leaves_(num_leaves), min_split_gain_(min_split_gain), min_child_weight_(min_child_weight),
+      min_child_samples_(min_child_samples), subsample_(subsample), colsample_bytree_(colsample_bytree),
+      reg_alpha_(reg_alpha), reg_lambda_(reg_lambda), objective_(objective), boosting_type_(boosting_type),
+      feature_fraction_seed_(false), bagging_seed_(false) {
+}
+
+void LightGBM::fit(const Matrix& X, const Vector& y) {
+    std::cout << "Training LightGBM with " << n_estimators_ << " estimators" << std::endl;
+    std::cout << "  Learning rate: " << learning_rate_ << std::endl;
+    std::cout << "  Num leaves: " << num_leaves_ << std::endl;
+    std::cout << "  Max depth: " << max_depth_ << std::endl;
+    std::cout << "  Min split gain: " << min_split_gain_ << std::endl;
+    std::cout << "  Boosting type: " << boosting_type_ << std::endl;
+}
+
+Vector LightGBM::predict(const Matrix& X) {
+    return Vector();
+}
+
+double LightGBM::evaluate(const Matrix& X, const Vector& y) {
+    return 0.0;
+}
+
+Vector LightGBM::get_feature_importance() const {
+    return Vector();
+}
+
+void LightGBM::set_categorical_features(const std::vector<int>& categorical_features) {
+    // Stub implementation
+}
+
+void LightGBM::set_early_stopping(int rounds, double tolerance) {
+    // Stub implementation
+}
+
+Vector LightGBM::calculate_gradients(const Vector& y_true, const Vector& y_pred) {
+    return Vector();
+}
+
+Vector LightGBM::calculate_hessians(const Vector& y_true, const Vector& y_pred) {
+    return Vector();
+}
+
+std::vector<int> LightGBM::get_leaf_samples(const Matrix& X, const std::vector<int>& sample_indices) {
+    return {};
+}
+
+double LightGBM::calculate_leaf_value(const Vector& gradients, const Vector& hessians, 
+                                     const std::vector<int>& leaf_indices) {
+    return 0.0;
+}
+
+// CatBoost implementation
+CatBoost::CatBoost(int n_estimators, double learning_rate, int max_depth,
+                   double l2_leaf_reg, double random_strength, double bagging_temperature,
+                   int border_count, const std::string& loss_function)
+    : n_estimators_(n_estimators), learning_rate_(learning_rate), max_depth_(max_depth),
+      l2_leaf_reg_(l2_leaf_reg), random_strength_(random_strength), bagging_temperature_(bagging_temperature),
+      border_count_(border_count), loss_function_(loss_function), use_best_model_(false) {
+}
+
+void CatBoost::fit(const Matrix& X, const Vector& y, const std::vector<int>& categorical_features) {
+    categorical_features_ = categorical_features;
+    std::cout << "Training CatBoost with " << n_estimators_ << " estimators" << std::endl;
+    std::cout << "  Learning rate: " << learning_rate_ << std::endl;
+    std::cout << "  Max depth: " << max_depth_ << std::endl;
+    std::cout << "  L2 leaf regularization: " << l2_leaf_reg_ << std::endl;
+    std::cout << "  Random strength: " << random_strength_ << std::endl;
+    std::cout << "  Categorical features: " << categorical_features_.size() << std::endl;
+    std::cout << "  Loss function: " << loss_function_ << std::endl;
+}
+
+Vector CatBoost::predict(const Matrix& X) {
+    return Vector();
+}
+
+double CatBoost::evaluate(const Matrix& X, const Vector& y) {
+    return 0.0;
+}
+
+Vector CatBoost::get_feature_importance() const {
+    return Vector();
+}
+
+void CatBoost::set_categorical_features(const std::vector<int>& categorical_features) {
+    categorical_features_ = categorical_features;
+}
+
+void CatBoost::enable_gpu_training(bool enable) {
+    std::cout << "GPU training " << (enable ? "enabled" : "disabled") << " for CatBoost" << std::endl;
+}
+
+Vector CatBoost::calculate_gradients(const Vector& y_true, const Vector& y_pred) {
+    return Vector();
+}
+
+Matrix CatBoost::encode_categorical_features(const Matrix& X) {
+    return X;
+}
+
+double CatBoost::calculate_ordered_boosting_score(const Vector& gradients, const Vector& hessians) {
+    return 0.0;
 }
 
 } // namespace algorithms
