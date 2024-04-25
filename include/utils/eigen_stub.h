@@ -141,6 +141,25 @@ public:
         std::fill(data_.begin(), data_.end(), value);
     }
     
+    // Coefficient-wise operations
+    Scalar maxCoeff() const {
+        if (size() == 0) return 0;
+        Scalar max_val = data_[0];
+        for (Index i = 1; i < size(); ++i) {
+            if (data_[i] > max_val) max_val = data_[i];
+        }
+        return max_val;
+    }
+    
+    Scalar minCoeff() const {
+        if (size() == 0) return 0;
+        Scalar min_val = data_[0];
+        for (Index i = 1; i < size(); ++i) {
+            if (data_[i] < min_val) min_val = data_[i];
+        }
+        return min_val;
+    }
+    
     // Transpose
     Matrix transpose() const {
         Matrix result(cols_, rows_);
@@ -316,7 +335,7 @@ public:
     }
     
     Matrix cwiseProduct(const Matrix& other) const {
-        if (this->rows() != other.rows() || this->cols() != other.cols_) {
+        if (this->rows() != other.rows() || this->cols() != other.cols()) {
             return Matrix();
         }
         Matrix result(this->rows(), this->cols());

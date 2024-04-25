@@ -9,6 +9,11 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <queue>
+#include <condition_variable>
+#include <chrono>
+#include <vector>
+#include <unordered_map>
 
 
 
@@ -325,7 +330,6 @@ public:
     void cleanup_resources();
     void restart_failed_components();
     HttpResponse handle_error_status(const HttpRequest& req, HttpResponse& res);
-    HttpResponse handle_health_check(const HttpRequest& req, HttpResponse& res);
 
     // Advanced request processing and content negotiation methods
     std::string negotiate_content_type(const HttpRequest& req, const std::vector<std::string>& available_types);
@@ -467,7 +471,6 @@ public:
     std::string generate_csrf_token();
     bool validate_csrf_token(const std::string& token);
     void add_security_headers(HttpResponse& res);
-    std::string hash_password(const std::string& password);
     std::string generate_secure_random_string(size_t length);
     bool is_rate_limited_by_ip(const std::string& ip);
     void log_security_event(const std::string& event, const std::string& ip, const std::string& details);
