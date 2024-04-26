@@ -350,6 +350,103 @@ void WebServer::initialize_default_routes() {
             }
             return res;
         });
+
+        // Machine Learning API endpoints
+        add_get_route("/api/ml/algorithms", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_ml_algorithms_list(req, res);
+        });
+
+        add_post_route("/api/ml/train", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_ml_train(req, res);
+        });
+
+        add_post_route("/api/ml/predict", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_ml_predict(req, res);
+        });
+
+        add_get_route("/api/ml/models", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_ml_models_list(req, res);
+        });
+
+        add_get_route("/api/ml/model/{id}/info", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_ml_model_info(req, res);
+        });
+
+        add_delete_route("/api/ml/model/{id}", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_ml_model_delete(req, res);
+        });
+
+        // Data Processing API endpoints
+        add_post_route("/api/data/upload", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_data_upload(req, res);
+        });
+
+        add_get_route("/api/data/datasets", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_data_list(req, res);
+        });
+
+        add_get_route("/api/data/dataset/{id}/info", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_data_info(req, res);
+        });
+
+        add_post_route("/api/data/preprocess", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_data_preprocess(req, res);
+        });
+
+        add_get_route("/api/data/statistics", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_data_statistics(req, res);
+        });
+
+        // Job Management API endpoints
+        add_post_route("/api/jobs/submit", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_job_submit(req, res);
+        });
+
+        add_get_route("/api/jobs", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_jobs_list(req, res);
+        });
+
+        add_get_route("/api/jobs/{id}/status", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_job_status(req, res);
+        });
+
+        add_post_route("/api/jobs/{id}/cancel", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_job_cancel(req, res);
+        });
+
+        add_get_route("/api/jobs/{id}/results", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_job_results(req, res);
+        });
+
+        // Visualization API endpoints
+        add_get_route("/api/viz/charts", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_viz_charts(req, res);
+        });
+
+        add_post_route("/api/viz/generate", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_viz_generate(req, res);
+        });
+
+        add_get_route("/api/viz/dashboard/config", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_viz_dashboard_config(req, res);
+        });
+
+        // Cluster Management API endpoints
+        add_get_route("/api/cluster/status", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_cluster_status(req, res);
+        });
+
+        add_get_route("/api/cluster/nodes", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_cluster_nodes(req, res);
+        });
+
+        add_post_route("/api/cluster/scale", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_cluster_scale(req, res);
+        });
+
+        add_get_route("/api/cluster/resources", [this](const HttpRequest& req, HttpResponse& res) {
+            return handle_cluster_resources(req, res);
+        });
     
     std::cout << "✅ Default routes and middleware initialized" << std::endl;
 }

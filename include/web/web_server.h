@@ -568,6 +568,39 @@ private:
     bool parse_json_request(const std::string& body, std::map<std::string, std::string>& params);
     std::string create_success_response(const std::string& message = "Success");
     std::string create_error_response(const std::string& error);
+
+    // Machine Learning API handlers
+    HttpResponse handle_ml_algorithms_list(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_ml_train(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_ml_predict(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_ml_models_list(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_ml_model_info(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_ml_model_delete(const HttpRequest& req, HttpResponse& res);
+
+    // Data Processing API handlers
+    HttpResponse handle_data_upload(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_data_list(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_data_info(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_data_preprocess(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_data_statistics(const HttpRequest& req, HttpResponse& res);
+
+    // Job Management API handlers
+    HttpResponse handle_job_submit(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_jobs_list(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_job_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_job_cancel(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_job_results(const HttpRequest& req, HttpResponse& res);
+
+    // Visualization API handlers
+    HttpResponse handle_viz_charts(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_viz_generate(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_viz_dashboard_config(const HttpRequest& req, HttpResponse& res);
+
+    // Cluster Management API handlers
+    HttpResponse handle_cluster_status(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_cluster_nodes(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_cluster_scale(const HttpRequest& req, HttpResponse& res);
+    HttpResponse handle_cluster_resources(const HttpRequest& req, HttpResponse& res);
 };
 
 // WebSocket support for real-time updates
