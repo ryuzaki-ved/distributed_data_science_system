@@ -5,7 +5,8 @@ namespace dds {
 namespace monitoring {
 
 SystemMonitor::SystemMonitor(std::chrono::milliseconds interval)
-    : running_(false), monitoring_interval_(interval) {
+    : running_(false), monitoring_interval_(interval), alerting_enabled_(true), 
+      system_healthy_(true), last_health_check_(std::chrono::system_clock::now()) {
 }
 
 SystemMonitor::~SystemMonitor() {
@@ -25,13 +26,25 @@ void SystemMonitor::stop() {
 
 SystemMetrics SystemMonitor::get_current_metrics() {
     SystemMetrics metrics;
-    metrics.cpu_usage = 25.5;
-    metrics.memory_usage = 45.2;
-    metrics.disk_usage = 30.1;
+    metrics.cpu_usage = get_cpu_usage();
+    metrics.memory_usage = get_memory_usage();
+    metrics.disk_usage = get_disk_usage();
+    metrics.gpu_usage = get_gpu_usage();
+    metrics.network_io = get_network_io();
+    metrics.disk_io = get_disk_io();
     metrics.active_jobs = 2;
     metrics.completed_jobs = 15;
     metrics.failed_jobs = 0;
+    metrics.queue_size = 3;
+    metrics.response_time_avg = 125.5;
+    metrics.active_connections = 8;
     metrics.timestamp = std::chrono::system_clock::now();
+    
+    // Process alerts based on metrics
+    if (alerting_enabled_) {
+        process_alerts(metrics);
+    }
+    
     return metrics;
 }
 

@@ -96,6 +96,21 @@ private:
     std::chrono::milliseconds monitoring_interval_;
     std::vector<SystemMetrics> metrics_history_;
     std::mutex metrics_mutex_;
+    
+    // Alert system
+    std::vector<Alert> alerts_;
+    std::mutex alerts_mutex_;
+    std::vector<AlertHandler> alert_handlers_;
+    PerformanceThreshold thresholds_;
+    bool alerting_enabled_;
+    
+    // Performance tracking
+    std::map<std::string, std::vector<double>> performance_history_;
+    std::mutex performance_mutex_;
+    
+    // Health checking
+    std::atomic<bool> system_healthy_;
+    std::chrono::system_clock::time_point last_health_check_;
 
 public:
     SystemMonitor(std::chrono::milliseconds interval = std::chrono::milliseconds(1000));
@@ -108,12 +123,52 @@ public:
     SystemMetrics get_current_metrics();
     std::vector<SystemMetrics> get_metrics_history(int limit = 100);
     
+    // Alert management
+    void enable_alerting(bool enabled = true);
+    void set_thresholds(const PerformanceThreshold& thresholds);
+    void add_alert_handler(AlertHandler handler);
+    void trigger_alert(AlertType type, AlertSeverity severity, const std::string& message, const std::string& details = "");
+    std::vector<Alert> get_active_alerts();
+    void acknowledge_alert(size_t alert_index, const std::string& user = "system");
+    void clear_acknowledged_alerts();
+    
+    // Performance tracking
+    void record_performance_metric(const std::string& metric_name, double value);
+    double get_average_performance(const std::string& metric_name, int samples = 10);
+    std::map<std::string, double> get_performance_summary();
+    
+    // Health monitoring
+    bool is_system_healthy();
+    void perform_health_check();
+    std::string get_health_report();
+    
+    // Advanced monitoring
+    void monitor_job_performance(const std::string& job_id, double execution_time);
+    void monitor_resource_usage(const std::string& resource, double usage);
+    void monitor_error_rate(const std::string& component, int errors, int total_requests);
+    
+    // Predictive analytics
+    bool predict_resource_exhaustion(const std::string& resource, std::chrono::minutes time_window);
+    double calculate_trend(const std::string& metric, int samples = 20);
+    std::vector<std::string> get_performance_recommendations();
+    
 private:
     void monitoring_loop();
     SystemMetrics collect_system_metrics();
     double get_cpu_usage();
     double get_memory_usage();
     double get_disk_usage();
+    double get_gpu_usage();
+    double get_network_io();
+    double get_disk_io();
+    
+    // Alert processing
+    void process_alerts(const SystemMetrics& metrics);
+    void send_alert_notifications(const Alert& alert);
+    
+    // Performance analysis
+    void analyze_performance_trends();
+    void detect_anomalies();
 };
 
 // Logger
