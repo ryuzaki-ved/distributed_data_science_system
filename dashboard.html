@@ -47,20 +47,96 @@
             
             <div class="card">
                 <h2>ML Algorithms</h2>
-                <div class="metric"><span>Neural Networks:</span><span>Available</span></div>
+                <div class="metric"><span>Neural Networks:</span><span>Available (9 activations)</span></div>
+                <div class="metric"><span>XGBoost:</span><span>Available</span></div>
+                <div class="metric"><span>LightGBM:</span><span>Available</span></div>
+                <div class="metric"><span>CatBoost:</span><span>Available</span></div>
                 <div class="metric"><span>Random Forest:</span><span>Available</span></div>
                 <div class="metric"><span>PCA:</span><span>Available</span></div>
                 <div class="metric"><span>SVM:</span><span>Available</span></div>
+            </div>
+
+            <div class="card">
+                <h2>Data Visualization</h2>
+                <div style="margin: 10px 0;">
+                    <canvas id="performanceChart" width="280" height="150"></canvas>
+                </div>
+                <button class="button" onclick="updateChart()">Update Chart</button>
+                <button class="button" onclick="generateReport()">Generate Report</button>
+            </div>
+
+            <div class="card">
+                <h2>Real-time Metrics</h2>
+                <div id="metricsContainer">
+                    <div class="metric"><span>Requests/sec:</span><span id="rps">0</span></div>
+                    <div class="metric"><span>Response Time:</span><span id="responseTime">0ms</span></div>
+                    <div class="metric"><span>Error Rate:</span><span id="errorRate">0%</span></div>
+                    <div class="metric"><span>Cache Hit Rate:</span><span id="cacheHit">0%</span></div>
+                </div>
+                <div style="margin: 10px 0;">
+                    <canvas id="metricsChart" width="280" height="100"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Cluster Status</h2>
+                <div class="status" id="clusterStatus">Healthy</div>
+                <div class="metric"><span>Active Nodes:</span><span id="activeNodes">8</span></div>
+                <div class="metric"><span>CPU Utilization:</span><span id="clusterCpu">65%</span></div>
+                <div class="metric"><span>Memory Utilization:</span><span id="clusterMemory">72%</span></div>
+                <div class="metric"><span>GPU Utilization:</span><span id="clusterGpu">83%</span></div>
+                <button class="button" onclick="scaleCluster()">Scale Cluster</button>
+            </div>
+
+            <div class="card">
+                <h2>Recent Jobs</h2>
+                <div id="jobsList">
+                    <div class="metric"><span>XGBoost Training:</span><span style="color: #ffc107;">Running (65%)</span></div>
+                    <div class="metric"><span>Data Preprocessing:</span><span style="color: #28a745;">Completed</span></div>
+                    <div class="metric"><span>Model Evaluation:</span><span style="color: #6c757d;">Queued</span></div>
+                </div>
+                <button class="button" onclick="refreshJobs()">Refresh</button>
+                <button class="button" onclick="viewAllJobs()">View All</button>
+            </div>
+
+            <div class="card">
+                <h2>Model Performance</h2>
+                <div style="margin: 10px 0;">
+                    <canvas id="modelChart" width="280" height="120"></canvas>
+                </div>
+                <div class="metric"><span>Best Model:</span><span>XGBoost (94% acc)</span></div>
+                <div class="metric"><span>Total Models:</span><span id="totalModels">15</span></div>
+                <button class="button" onclick="compareModels()">Compare Models</button>
             </div>
         </div>
         
         <div class="card">
             <h2>API Endpoints</h2>
+            <div><strong>Core APIs:</strong></div>
             <div>GET /api/status - System status</div>
             <div>GET /api/jobs - List all jobs</div>
             <div>POST /api/jobs/submit - Submit new job</div>
             <div>GET /api/hdfs/list - List HDFS files</div>
-            <div>POST /api/algorithms/train - Train model</div>
+            
+            <div style="margin-top: 15px;"><strong>Machine Learning APIs:</strong></div>
+            <div>GET /api/ml/algorithms - List available algorithms</div>
+            <div>POST /api/ml/train - Train model</div>
+            <div>POST /api/ml/predict - Make predictions</div>
+            <div>GET /api/ml/models - List trained models</div>
+            
+            <div style="margin-top: 15px;"><strong>Data Processing APIs:</strong></div>
+            <div>POST /api/data/upload - Upload dataset</div>
+            <div>GET /api/data/datasets - List datasets</div>
+            <div>POST /api/data/preprocess - Preprocess data</div>
+            
+            <div style="margin-top: 15px;"><strong>Visualization APIs:</strong></div>
+            <div>GET /api/viz/charts - Available chart types</div>
+            <div>POST /api/viz/generate - Generate visualization</div>
+            
+            <div style="margin-top: 15px;"><strong>Cluster Management APIs:</strong></div>
+            <div>GET /api/cluster/status - Cluster status</div>
+            <div>GET /api/cluster/nodes - List cluster nodes</div>
+            <div>POST /api/cluster/scale - Scale cluster</div>
         </div>
     </div>
     
