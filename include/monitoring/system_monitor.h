@@ -19,10 +19,64 @@ struct SystemMetrics {
     double cpu_usage;
     double memory_usage;
     double disk_usage;
+    double gpu_usage;
+    double network_io;
+    double disk_io;
     int active_jobs;
     int completed_jobs;
     int failed_jobs;
+    int queue_size;
+    double response_time_avg;
+    int active_connections;
     std::chrono::system_clock::time_point timestamp;
+};
+
+// Alert types
+enum class AlertType {
+    CPU_HIGH,
+    MEMORY_HIGH,
+    DISK_FULL,
+    GPU_HIGH,
+    JOB_FAILED,
+    RESPONSE_TIME_HIGH,
+    CONNECTION_LIMIT,
+    SYSTEM_ERROR
+};
+
+// Alert severity
+enum class AlertSeverity {
+    LOW,
+    MEDIUM,
+    HIGH,
+    CRITICAL
+};
+
+// Alert structure
+struct Alert {
+    AlertType type;
+    AlertSeverity severity;
+    std::string message;
+    std::string details;
+    std::chrono::system_clock::time_point timestamp;
+    bool acknowledged;
+    std::string acknowledged_by;
+};
+
+// Alert handler function type
+using AlertHandler = std::function<void(const Alert&)>;
+
+// Performance threshold
+struct PerformanceThreshold {
+    double cpu_warning = 80.0;
+    double cpu_critical = 95.0;
+    double memory_warning = 85.0;
+    double memory_critical = 95.0;
+    double disk_warning = 90.0;
+    double disk_critical = 98.0;
+    double gpu_warning = 85.0;
+    double gpu_critical = 95.0;
+    double response_time_warning = 1000.0; // ms
+    double response_time_critical = 5000.0; // ms
 };
 
 // Log levels
