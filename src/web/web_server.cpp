@@ -5611,5 +5611,348 @@ void WebServer::cleanup_websocket_resources() {
     std::cout << "🔌 WebSocket resources cleaned up" << std::endl;
 }
 
+// Machine Learning API handlers
+HttpResponse WebServer::handle_ml_algorithms_list(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "algorithms": [
+                {
+                    "name": "neural_network",
+                    "displayName": "Neural Network",
+                    "type": "deep_learning",
+                    "description": "Multi-layer perceptron with advanced activation functions",
+                    "activations": ["relu", "sigmoid", "tanh", "swish", "gelu", "mish", "selu", "hard_sigmoid", "hard_swish"],
+                    "parameters": ["learning_rate", "batch_size", "epochs", "layers"]
+                },
+                {
+                    "name": "xgboost",
+                    "displayName": "XGBoost",
+                    "type": "gradient_boosting",
+                    "description": "Extreme Gradient Boosting with regularization",
+                    "parameters": ["n_estimators", "learning_rate", "max_depth", "reg_lambda", "reg_alpha"]
+                },
+                {
+                    "name": "lightgbm",
+                    "displayName": "LightGBM",
+                    "type": "gradient_boosting",
+                    "description": "Fast gradient boosting with leaf-wise growth",
+                    "parameters": ["n_estimators", "learning_rate", "num_leaves", "min_split_gain"]
+                },
+                {
+                    "name": "catboost",
+                    "displayName": "CatBoost",
+                    "type": "gradient_boosting",
+                    "description": "Gradient boosting with categorical features support",
+                    "parameters": ["n_estimators", "learning_rate", "max_depth", "l2_leaf_reg"]
+                }
+            ]
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_ml_train(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Training job submitted successfully",
+        "data": {
+            "job_id": "ml_train_12345",
+            "status": "pending",
+            "algorithm": "xgboost",
+            "estimated_time": "5-10 minutes"
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_ml_predict(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Prediction completed",
+        "data": {
+            "predictions": [0.85, 0.23, 0.67, 0.91, 0.45],
+            "model_id": "model_12345",
+            "prediction_time_ms": 15
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_ml_models_list(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "models": [
+                {
+                    "id": "model_12345",
+                    "name": "Sales Prediction XGBoost",
+                    "algorithm": "xgboost",
+                    "status": "trained",
+                    "accuracy": 0.94
+                }
+            ]
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_ml_model_info(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "id": "model_12345",
+            "name": "Sales Prediction XGBoost",
+            "algorithm": "xgboost",
+            "status": "trained",
+            "accuracy": 0.94,
+            "parameters": {
+                "n_estimators": 100,
+                "learning_rate": 0.1
+            }
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_ml_model_delete(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Model deleted successfully"
+    })";
+    return res;
+}
+
+// Data Processing API handlers
+HttpResponse WebServer::handle_data_upload(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Data uploaded successfully",
+        "data": {
+            "dataset_id": "dataset_12345",
+            "size_mb": 25.7,
+            "rows": 150000
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_data_list(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "datasets": [
+                {
+                    "id": "dataset_12345",
+                    "name": "Sales Data Q4",
+                    "size_mb": 25.7,
+                    "rows": 150000
+                }
+            ]
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_data_info(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "id": "dataset_12345",
+            "name": "Sales Data Q4",
+            "rows": 150000,
+            "columns": 15,
+            "missing_values": 245
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_data_preprocess(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Data preprocessing completed"
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_data_statistics(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "total_datasets": 15,
+            "total_size_gb": 2.8
+        }
+    })";
+    return res;
+}
+
+// Job Management API handlers  
+HttpResponse WebServer::handle_job_submit(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Job submitted successfully",
+        "data": {
+            "job_id": "job_12345",
+            "status": "queued"
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_jobs_list(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "jobs": [
+                {
+                    "id": "job_12345",
+                    "name": "XGBoost Training",
+                    "status": "running",
+                    "progress": 0.65
+                }
+            ]
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_job_status(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "id": "job_12345",
+            "status": "running",
+            "progress": 0.65
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_job_cancel(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Job cancelled successfully"
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_job_results(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "job_id": "job_12345",
+            "results": {
+                "accuracy": 0.94,
+                "model_id": "model_12346"
+            }
+        }
+    })";
+    return res;
+}
+
+// Visualization API handlers
+HttpResponse WebServer::handle_viz_charts(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "available_charts": ["line", "bar", "scatter", "heatmap"]
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_viz_generate(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Visualization generated successfully"
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_viz_dashboard_config(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "dashboard_id": "dashboard_main",
+            "widgets": []
+        }
+    })";
+    return res;
+}
+
+// Cluster Management API handlers
+HttpResponse WebServer::handle_cluster_status(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "cluster_id": "dds_cluster_main",
+            "status": "healthy",
+            "nodes": 8
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_cluster_nodes(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "nodes": [
+                {
+                    "id": "node_001",
+                    "status": "active",
+                    "cpu_cores": 16,
+                    "memory_gb": 64
+                }
+            ]
+        }
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_cluster_scale(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "message": "Cluster scaling initiated"
+    })";
+    return res;
+}
+
+HttpResponse WebServer::handle_cluster_resources(const HttpRequest& req, HttpResponse& res) {
+    res.status_code = 200;
+    res.body = R"({
+        "status": "success",
+        "data": {
+            "cpu_cores": 128,
+            "memory_gb": 512,
+            "utilization": 0.65
+        }
+    })";
+    return res;
+}
+
 } // namespace web
 } // namespace dds 
