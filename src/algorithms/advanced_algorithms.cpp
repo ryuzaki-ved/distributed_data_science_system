@@ -471,7 +471,7 @@ void DenseLayer::initialize_weights(double std_dev) {
     
     // Initialize biases to small random values
     for (int i = 0; i < biases_.size(); ++i) {
-        biases_(i) = dis(gen) * 0.1; // Smaller bias initialization
+        biases_[i] = dis(gen) * 0.1; // Smaller bias initialization
     }
 }
 
