@@ -15,6 +15,14 @@ int main() {
     std::cout << "Version: 1.0.0" << std::endl;
     std::cout << "Enhanced version with Hadoop integration!" << std::endl;
 
+        // Demonstrate Variant usage
+        std::cout << "\n=== Variant Type Demo ===" << std::endl;
+        Variant v1 = 42;
+        Variant v2 = 3.14;
+        Variant v3 = std::string("Hello DDS!");
+        std::cout << "Variant holding int: "; v1.print();
+        std::cout << "Variant holding double: "; v2.print();
+        std::cout << "Variant holding string: "; v3.print();
     // Test basic types
     dds::JobType job_type = dds::JobType::LINEAR_REGRESSION;
     dds::JobStatus status = dds::JobStatus::PENDING;
@@ -37,6 +45,11 @@ int main() {
         std::cout << std::endl;
     }
 
+                // Health check endpoint demo
+                std::cout << "  🔎 Checking server health (/server/ping)..." << std::endl;
+                // Simulate HTTP GET to /server/ping (stub)
+                // In a real app, use an HTTP client library
+                std::cout << "  Response: pong" << std::endl;
     std::cout << "\nVector (3x1):" << std::endl;
     for (int i = 0; i < 3; ++i) {
         std::cout << vector[i] << std::endl;
