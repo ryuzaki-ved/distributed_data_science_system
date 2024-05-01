@@ -12,7 +12,10 @@ private:
 
 public:
     SimpleMatrix(int rows, int cols) : rows_(rows), cols_(cols) {
-        data.resize(rows, std::vector<double>(cols, 0.0));
+        data.reserve(rows);
+        for (int i = 0; i < rows; ++i) {
+            data.emplace_back(cols, 0.0);
+        }
     }
     
     double& operator()(int i, int j) { return data[i][j]; }
@@ -22,17 +25,17 @@ public:
     int cols() const { return cols_; }
     
     void setRandom() {
-        for (int i = 0; i < rows_; ++i) {
-            for (int j = 0; j < cols_; ++j) {
-                data[i][j] = (double)rand() / RAND_MAX * 4.0 - 2.0; // -2 to 2
-            }
+        for (auto& row : data) {
+            std::generate(row.begin(), row.end(), []() {
+                return (double)rand() / RAND_MAX * 4.0 - 2.0;
+            });
         }
     }
     
     void print() const {
-        for (int i = 0; i < rows_; ++i) {
-            for (int j = 0; j < cols_; ++j) {
-                std::cout << std::fixed << std::setprecision(4) << data[i][j] << " ";
+        for (const auto& row : data) {
+            for (const auto& val : row) {
+                std::cout << std::fixed << std::setprecision(4) << val << " ";
             }
             std::cout << std::endl;
         }
@@ -43,9 +46,10 @@ public:
 class ActivationFunctions {
 public:
     static SimpleMatrix relu(const SimpleMatrix& x) {
-        SimpleMatrix result(x.rows(), x.cols());
-        for (int i = 0; i < x.rows(); ++i) {
-            for (int j = 0; j < x.cols(); ++j) {
+        int rows = x.rows(), cols = x.cols();
+        SimpleMatrix result(rows, cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
                 result(i, j) = std::max(0.0, x(i, j));
             }
         }
@@ -53,9 +57,10 @@ public:
     }
     
     static SimpleMatrix sigmoid(const SimpleMatrix& x) {
-        SimpleMatrix result(x.rows(), x.cols());
-        for (int i = 0; i < x.rows(); ++i) {
-            for (int j = 0; j < x.cols(); ++j) {
+        int rows = x.rows(), cols = x.cols();
+        SimpleMatrix result(rows, cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
                 result(i, j) = 1.0 / (1.0 + std::exp(-x(i, j)));
             }
         }
@@ -63,9 +68,10 @@ public:
     }
     
     static SimpleMatrix tanh(const SimpleMatrix& x) {
-        SimpleMatrix result(x.rows(), x.cols());
-        for (int i = 0; i < x.rows(); ++i) {
-            for (int j = 0; j < x.cols(); ++j) {
+        int rows = x.rows(), cols = x.cols();
+        SimpleMatrix result(rows, cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
                 result(i, j) = std::tanh(x(i, j));
             }
         }
