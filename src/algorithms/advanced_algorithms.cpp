@@ -46,15 +46,33 @@ void NeuralLayer::zero_gradients() {
 
 // Activation functions
 Eigen::MatrixXd NeuralLayer::relu(const Eigen::MatrixXd& x) {
-    return x.unaryExpr([](double v) { return std::max(0.0, v); });
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = std::max(0.0, x(i, j));
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::sigmoid(const Eigen::MatrixXd& x) {
-    return (1.0 / (1.0 + (-x.array()).exp())).matrix();
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = 1.0 / (1.0 + std::exp(-x(i, j)));
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::tanh(const Eigen::MatrixXd& x) {
-    return x.array().tanh().matrix();
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = std::tanh(x(i, j));
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::softmax(const Eigen::MatrixXd& x) {
@@ -99,7 +117,13 @@ Eigen::MatrixXd NeuralLayer::elu(const Eigen::MatrixXd& x, double alpha) {
 
 // Activation derivatives
 Eigen::MatrixXd NeuralLayer::relu_derivative(const Eigen::MatrixXd& x) {
-    return (x.array() > 0.0).select(1.0, 0.0).matrix();
+    Eigen::MatrixXd result = x;
+    for (int i = 0; i < x.rows(); ++i) {
+        for (int j = 0; j < x.cols(); ++j) {
+            result(i, j) = (x(i, j) > 0) ? 1.0 : 0.0;
+        }
+    }
+    return result;
 }
 
 Eigen::MatrixXd NeuralLayer::sigmoid_derivative(const Eigen::MatrixXd& x) {
