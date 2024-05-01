@@ -40,19 +40,14 @@ void ConfigValidator::add_url_validation(const std::string& field_name) {
 bool ConfigValidator::validate_config(const std::map<std::string, std::string>& config) {
     clear_errors();
     
-    for (const auto& field_rule : field_rules_) {
-        const std::string& field_name = field_rule.first;
-        const auto& rules = field_rule.second;
-        
+    for (const auto& [field_name, rules] : field_rules_) {
         auto it = config.find(field_name);
-        std::string value = (it != config.end()) ? it->second : "";
-        
+        const std::string& value = (it != config.end()) ? it->second : std::string();
         for (const auto& rule : rules) {
             if (rule == ValidationRule::REQUIRED && value.empty()) {
                 add_error(field_name, "Field is required", rule);
                 continue;
             }
-            
             if (!value.empty()) {
                 validate_field(field_name, value);
             }
@@ -65,10 +60,10 @@ bool ConfigValidator::validate_config(const std::map<std::string, std::string>& 
 bool ConfigValidator::validate_field(const std::string& field_name, const std::string& value) {
     auto it = field_rules_.find(field_name);
     if (it == field_rules_.end()) return true;
-    
+
     bool valid = true;
-    
-    for (const auto& rule : it->second) {
+    const auto& rules = it->second;
+    for (const auto& rule : rules) {
         switch (rule) {
             case ValidationRule::NUMERIC_RANGE: {
                 if (!is_valid_number(value)) {
@@ -141,12 +136,10 @@ void ConfigValidator::print_validation_report() const {
 }
 
 bool ConfigValidator::is_valid_number(const std::string& value) const {
-    try {
-        std::stod(value);
-        return true;
-    } catch (...) {
-        return false;
-    }
+    if (value.empty()) return false;
+    char* endptr = nullptr;
+    std::strtod(value.c_str(), &endptr);
+    return endptr != value.c_str() && *endptr == '\0';
 }
 
 bool ConfigValidator::is_valid_email(const std::string& email) const {
@@ -160,8 +153,7 @@ bool ConfigValidator::is_valid_url(const std::string& url) const {
 }
 
 bool ConfigValidator::file_exists(const std::string& path) const {
-    std::ifstream file(path);
-    return file.good();
+    return std::filesystem::exists(path);
 }
 
 void ConfigValidator::add_error(const std::string& field, const std::string& message, ValidationRule rule) {
