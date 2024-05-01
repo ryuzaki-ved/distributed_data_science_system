@@ -23,6 +23,17 @@
         
         <div class="grid">
             <div class="card">
+                <h2>Server Info</h2>
+                <div class="metric"><span>Uptime:</span><span id="uptime">-</span></div>
+                <div class="metric"><span>Total Requests:</span><span id="totalRequests">-</span></div>
+                <div class="metric"><span>Active Connections:</span><span id="activeConnections">-</span></div>
+                <div class="metric"><span>Cache Hits:</span><span id="cacheHits">-</span></div>
+                <div class="metric"><span>Cache Misses:</span><span id="cacheMisses">-</span></div>
+                <button class="button" onclick="refreshServerInfo()">Refresh Info</button>
+                <button class="button" onclick="pingServer()">Ping Server</button>
+                <div id="pingResult" style="margin-top:10px;"></div>
+            </div>
+            <div class="card">
                 <h2>System Status</h2>
                 <div class="status">Online</div>
                 <div class="metric"><span>CPU Usage:</span><span id="cpu">25.5%</span></div>
@@ -141,6 +152,29 @@
     </div>
     
     <script>
+        function refreshServerInfo() {
+            fetch('/server/info')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('uptime').textContent = data.uptime + 's';
+                    document.getElementById('totalRequests').textContent = data.total_requests;
+                    document.getElementById('activeConnections').textContent = data.active_connections;
+                    document.getElementById('cacheHits').textContent = data.cache_hits;
+                    document.getElementById('cacheMisses').textContent = data.cache_misses;
+                })
+                .catch(e => console.error(e));
+        }
+
+        function pingServer() {
+            fetch('/server/ping')
+                .then(r => r.text())
+                .then(data => {
+                    document.getElementById('pingResult').textContent = 'Ping response: ' + data;
+                })
+                .catch(e => {
+                    document.getElementById('pingResult').textContent = 'Ping failed';
+                });
+        }
         function submitJob() {
             fetch('/api/jobs/submit', {method: 'POST'})
                 .then(r => r.json())
@@ -354,6 +388,7 @@
             updateMetricsChart();
             updateModelChart();
             updateRealTimeMetrics();
+            refreshServerInfo();
         };
         
         // Auto-refresh with enhanced metrics
