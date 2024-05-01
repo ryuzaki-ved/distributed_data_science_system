@@ -124,7 +124,30 @@ void WebServer::stop() {
     // Shutdown thread pool
     shutdown_thread_pool_ = true;
     thread_pool_cv_.notify_all();
-    
+        // Add /server/info route for basic server stats
+        add_get_route("/server/info", [this](const HttpRequest& req) -> HttpResponse {
+            std::ostringstream oss;
+            oss << "{"
+                << "\"uptime\": " << std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time_).count() << ", "
+                << "\"total_requests\": " << total_requests_ << ", "
+                << "\"active_connections\": " << active_connections_ << ", "
+                << "\"cache_hits\": " << cache_hits_ << ", "
+                << "\"cache_misses\": " << cache_misses_ << "} ";
+            HttpResponse resp;
+            resp.status_code = 200;
+            resp.body = oss.str();
+            resp.headers["Content-Type"] = "application/json";
+            return resp;
+        });
+
+        // Add /server/ping route for health check
+        add_get_route("/server/ping", [](const HttpRequest& req) -> HttpResponse {
+            HttpResponse resp;
+            resp.status_code = 200;
+            resp.body = "pong";
+            resp.headers["Content-Type"] = "text/plain";
+            return resp;
+        });
     // Wait for all worker threads to finish
     for (auto& thread : worker_threads_) {
         if (thread.joinable()) {
