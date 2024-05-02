@@ -6,16 +6,18 @@ namespace database {
 
 DatabaseManager::DatabaseManager(const std::string& db_path) 
     : db_(nullptr), db_path_(db_path), initialized_(false) {
+    // Constructor: initialize database pointer and path
 }
 
 DatabaseManager::~DatabaseManager() {
+    // Destructor: ensure database is closed
     close();
 }
 
 bool DatabaseManager::initialize() {
     if (initialized_) return true;
     initialized_ = true;
-    std::cout << "Database initialized: " << db_path_ << std::endl;
+    std::cout << "✅ Database initialized: " << db_path_ << std::endl;
     return true;
 }
 
@@ -24,7 +26,9 @@ bool DatabaseManager::create_tables() {
 }
 
 void DatabaseManager::close() {
+    // Close database connection (stub)
     initialized_ = false;
+    std::cout << "🛑 Database closed: " << db_path_ << std::endl;
 }
 
 bool DatabaseManager::insert_job(const JobRecord& job) {
