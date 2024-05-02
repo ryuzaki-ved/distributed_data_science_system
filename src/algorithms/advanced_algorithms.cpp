@@ -1,5 +1,8 @@
 #include "../../include/algorithms/advanced_algorithms.h"
 #include <iostream>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 namespace dds {
 namespace algorithms {
@@ -35,7 +38,7 @@ void NeuralLayer::update_weights(double learning_rate) {
         }
     }
     for (auto i = 0; i < biases_.size(); ++i) {
-        biases_(i) -= learning_rate * gradients_(i, 0);
+        biases_[i] -= learning_rate * gradients_(i, 0);
     }
 }
 
@@ -406,43 +409,49 @@ Eigen::MatrixXd DenseLayer::backward(const Eigen::MatrixXd& gradient) {
     Eigen::MatrixXd activation_gradient;
     switch (activation_) {
         case ActivationType::RELU:
-            activation_gradient = gradient.cwiseProduct(relu_derivative(linear_cache_));
+            activation_gradient = relu_derivative(linear_cache_);
             break;
         case ActivationType::SIGMOID:
-            activation_gradient = gradient.cwiseProduct(sigmoid_derivative(linear_cache_));
+            activation_gradient = sigmoid_derivative(linear_cache_);
             break;
         case ActivationType::TANH:
-            activation_gradient = gradient.cwiseProduct(tanh_derivative(linear_cache_));
+            activation_gradient = tanh_derivative(linear_cache_);
             break;
         case ActivationType::SOFTMAX:
-            activation_gradient = gradient.cwiseProduct(softmax_derivative(linear_cache_));
+            activation_gradient = softmax_derivative(linear_cache_);
             break;
         case ActivationType::LEAKY_RELU:
-            activation_gradient = gradient.cwiseProduct(leaky_relu_derivative(linear_cache_));
+            activation_gradient = leaky_relu_derivative(linear_cache_);
             break;
         case ActivationType::ELU:
-            activation_gradient = gradient.cwiseProduct(elu_derivative(linear_cache_));
+            activation_gradient = elu_derivative(linear_cache_);
             break;
         case ActivationType::SWISH:
-            activation_gradient = gradient.cwiseProduct(swish_derivative(linear_cache_));
+            activation_gradient = swish_derivative(linear_cache_);
             break;
         case ActivationType::GELU:
-            activation_gradient = gradient.cwiseProduct(gelu_derivative(linear_cache_));
+            activation_gradient = gelu_derivative(linear_cache_);
             break;
         case ActivationType::MISH:
-            activation_gradient = gradient.cwiseProduct(mish_derivative(linear_cache_));
+            activation_gradient = mish_derivative(linear_cache_);
             break;
         case ActivationType::SELU:
-            activation_gradient = gradient.cwiseProduct(selu_derivative(linear_cache_));
+            activation_gradient = selu_derivative(linear_cache_);
             break;
         case ActivationType::HARD_SIGMOID:
-            activation_gradient = gradient.cwiseProduct(hard_sigmoid_derivative(linear_cache_));
+            activation_gradient = hard_sigmoid_derivative(linear_cache_);
             break;
         case ActivationType::HARD_SWISH:
-            activation_gradient = gradient.cwiseProduct(hard_swish_derivative(linear_cache_));
+            activation_gradient = hard_swish_derivative(linear_cache_);
             break;
         default:
-            activation_gradient = gradient; // No activation
+            activation_gradient = gradient;
+    }
+    // Elementwise multiply with gradient
+    for (int i = 0; i < activation_gradient.rows(); ++i) {
+        for (int j = 0; j < activation_gradient.cols(); ++j) {
+            activation_gradient(i, j) *= gradient(i, j);
+        }
     }
     
     // Compute gradients for weights and biases

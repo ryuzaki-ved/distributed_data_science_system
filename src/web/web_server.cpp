@@ -67,36 +67,31 @@ WebServer::WebServer(int port, const std::string& host)
     for (int i = 0; i < thread_pool_size_; ++i) {
         worker_threads_.emplace_back(&WebServer::worker_thread_function, this);
     }
-    std::cout << "🔧 Thread pool initialized with " << thread_pool_size_ << " workers" << std::endl;
-    std::cout << "💾 Response cache enabled (TTL: " << cache_ttl_ << "s, Max: " << max_cache_size_ << " entries)" << std::endl;
-    std::cout << "🗜️ Compression enabled (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)" << std::endl;
-    std::cout << "🔄 Adaptive compression: " << (adaptive_compression_enabled_ ? "Enabled" : "Disabled") << std::endl;
-    std::cout << "🚫 Bandwidth throttling: " << (bandwidth_throttling_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_bandwidth_per_client_ / 1024 / 1024 << " MB/min)" << std::endl;
-                        std::cout << "📊 Analytics and profiling: " << (analytics_enabled_ ? "Enabled" : "Disabled") << std::endl;
-                    std::cout << "🔒 Request validation enabled (max size: " << max_request_size_ << " bytes)" << std::endl;
-                                                        std::cout << "🛡️ Security features: " << (security_enabled_ ? "Enabled" : "Disabled") << std::endl;
-                                    std::cout << "🧠 Intelligent caching: " << (intelligent_caching_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_cache_size_ << " entries, TTL: " << cache_ttl_.count() << "s)" << std::endl;
-                                            std::cout << "🔄 Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << " (health check: " << health_check_interval_.count() << "s)" << std::endl;
-        std::cout << "🤝 Content negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << " (default: " << default_content_type_ << ")" << std::endl;
-        std::cout << "🔐 Session management: " << (session_management_enabled_ ? "Enabled" : "Disabled") << " (timeout: " << session_timeout_.count() << "s)" << std::endl;
-        std::cout << "🔑 Authentication: " << (authentication_enabled_ ? "Enabled" : "Disabled") << " (max sessions: " << max_sessions_per_user_ << ")" << std::endl;
-        std::cout << "📚 API Documentation: " << (api_documentation_enabled_ ? "Enabled" : "Disabled") << " (version: " << api_version_ << ")" << std::endl;
-        std::cout << "🔍 Swagger UI: " << (swagger_ui_enabled_ ? "Enabled" : "Disabled") << std::endl;
-        std::cout << "🔌 WebSocket: " << (websocket_enabled_ ? "Enabled" : "Disabled") << " (heartbeat: " << websocket_heartbeat_interval_.count() << "s)" << std::endl;
-        std::cout << "⚡ Real-time: " << (realtime_enabled_ ? "Enabled" : "Disabled") << std::endl;
-    std::cout << "🛣️ Routing framework enabled with middleware support" << std::endl;
-    std::cout << "📊 Monitoring and health checks enabled (interval: " << health_check_interval_ << "s)" << std::endl;
-    
-    // Initialize default routes
+    // Log server features
+    std::cout << "🔧 Thread pool: " << thread_pool_size_ << " workers\n"
+              << "💾 Cache: " << (cache_enabled_ ? "Enabled" : "Disabled") << " (TTL: " << cache_ttl_.count() << "s, Max: " << max_cache_size_ << ")\n"
+              << "🗜️ Compression: " << (compression_enabled_ ? "Enabled" : "Disabled") << " (level: " << compression_level_ << ", min size: " << min_compression_size_ << " bytes)\n"
+              << "🔄 Adaptive compression: " << (adaptive_compression_enabled_ ? "Enabled" : "Disabled") << "\n"
+              << "🚫 Bandwidth throttling: " << (bandwidth_throttling_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_bandwidth_per_client_ / 1024 / 1024 << " MB/min)\n"
+              << "📊 Analytics: " << (analytics_enabled_ ? "Enabled" : "Disabled") << "\n"
+              << "🔒 Validation: " << (validation_enabled_ ? "Enabled" : "Disabled") << " (max size: " << max_request_size_ << " bytes)\n"
+              << "🛡️ Security: " << (security_enabled_ ? "Enabled" : "Disabled") << "\n"
+              << "🧠 Intelligent caching: " << (intelligent_caching_enabled_ ? "Enabled" : "Disabled") << " (max: " << max_cache_size_ << ", TTL: " << cache_ttl_.count() << "s)\n"
+              << "🔄 Auto-recovery: " << (auto_recovery_enabled_ ? "Enabled" : "Disabled") << " (health check: " << health_check_interval_.count() << "s)\n"
+              << "🤝 Content negotiation: " << (content_negotiation_enabled_ ? "Enabled" : "Disabled") << " (default: " << default_content_type_ << ")\n"
+              << "🔐 Session management: " << (session_management_enabled_ ? "Enabled" : "Disabled") << " (timeout: " << session_timeout_.count() << "s)\n"
+              << "🔑 Authentication: " << (authentication_enabled_ ? "Enabled" : "Disabled") << " (max sessions: " << max_sessions_per_user_ << ")\n"
+              << "📚 API Docs: " << (api_documentation_enabled_ ? "Enabled" : "Disabled") << " (version: " << api_version_ << ")\n"
+              << "🔍 Swagger UI: " << (swagger_ui_enabled_ ? "Enabled" : "Disabled") << "\n"
+              << "🔌 WebSocket: " << (websocket_enabled_ ? "Enabled" : "Disabled") << " (heartbeat: " << websocket_heartbeat_interval_.count() << "s)\n"
+              << "⚡ Real-time: " << (realtime_enabled_ ? "Enabled" : "Disabled") << "\n"
+              << "🛣️ Routing: Enabled with middleware\n"
+              << "📊 Monitoring: Enabled (interval: " << health_check_interval_.count() << "s)" << std::endl;
+
+    // Initialize subsystems
     initialize_default_routes();
-    
-    // Initialize API documentation
     initialize_api_documentation();
-    
-    // Initialize WebSocket system
     initialize_websocket_system();
-    
-    // Pre-compress static content
     pre_compress_static_content();
 }
 
