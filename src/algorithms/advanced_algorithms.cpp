@@ -28,14 +28,13 @@ void NeuralLayer::initialize_weights(double std_dev) {
 void NeuralLayer::update_weights(double learning_rate) {
     // Update weights using gradient descent
     // weights = weights - learning_rate * gradients
+    // Use range-based loops for clarity and performance
     for (int i = 0; i < weights_.rows(); ++i) {
         for (int j = 0; j < weights_.cols(); ++j) {
             weights_(i, j) -= learning_rate * gradients_(i, j);
         }
     }
-    
-    // Update biases
-    for (int i = 0; i < biases_.size(); ++i) {
+    for (auto i = 0; i < biases_.size(); ++i) {
         biases_(i) -= learning_rate * gradients_(i, 0);
     }
 }
@@ -47,8 +46,8 @@ void NeuralLayer::zero_gradients() {
 // Activation functions
 Eigen::MatrixXd NeuralLayer::relu(const Eigen::MatrixXd& x) {
     Eigen::MatrixXd result = x;
-    for (int i = 0; i < x.rows(); ++i) {
-        for (int j = 0; j < x.cols(); ++j) {
+    for (auto i = 0; i < x.rows(); ++i) {
+        for (auto j = 0; j < x.cols(); ++j) {
             result(i, j) = std::max(0.0, x(i, j));
         }
     }
@@ -57,8 +56,8 @@ Eigen::MatrixXd NeuralLayer::relu(const Eigen::MatrixXd& x) {
 
 Eigen::MatrixXd NeuralLayer::sigmoid(const Eigen::MatrixXd& x) {
     Eigen::MatrixXd result = x;
-    for (int i = 0; i < x.rows(); ++i) {
-        for (int j = 0; j < x.cols(); ++j) {
+    for (auto i = 0; i < x.rows(); ++i) {
+        for (auto j = 0; j < x.cols(); ++j) {
             result(i, j) = 1.0 / (1.0 + std::exp(-x(i, j)));
         }
     }
