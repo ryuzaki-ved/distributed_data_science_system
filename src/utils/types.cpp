@@ -1,3 +1,4 @@
+
 #include <string>
 #include <variant>
 #include <iostream>
@@ -12,8 +13,9 @@ public:
     Variant(const std::string& v) : value(v) {}
     Variant(const char* v) : value(std::string(v)) {}
 
+    // Print the value held by the variant
     void print() const {
-        std::visit([](auto&& arg) {
+        std::visit([](const auto& arg) {
             std::cout << arg << std::endl;
         }, value);
     }
@@ -32,35 +34,23 @@ namespace dds {
 
 std::string job_type_to_string(JobType type) {
     switch (type) {
-        case JobType::LINEAR_REGRESSION:
-            return "linear_regression";
-        case JobType::LOGISTIC_REGRESSION:
-            return "logistic_regression";
-        case JobType::KMEANS_CLUSTERING:
-            return "kmeans_clustering";
-        case JobType::DBSCAN_CLUSTERING:
-            return "dbscan_clustering";
+        case JobType::LINEAR_REGRESSION:      return "linear_regression";
+        case JobType::LOGISTIC_REGRESSION:    return "logistic_regression";
+        case JobType::KMEANS_CLUSTERING:      return "kmeans_clustering";
+        case JobType::DBSCAN_CLUSTERING:      return "dbscan_clustering";
         case JobType::UNKNOWN:
-        default:
-            return "unknown";
+        default:                             return "unknown";
     }
 }
 
 JobType string_to_job_type(const std::string& str) {
     std::string lower_str = str;
     std::transform(lower_str.begin(), lower_str.end(), lower_str.begin(), ::tolower);
-    
-    if (lower_str == "linear_regression" || lower_str == "linear") {
-        return JobType::LINEAR_REGRESSION;
-    } else if (lower_str == "logistic_regression" || lower_str == "logistic") {
-        return JobType::LOGISTIC_REGRESSION;
-    } else if (lower_str == "kmeans_clustering" || lower_str == "kmeans") {
-        return JobType::KMEANS_CLUSTERING;
-    } else if (lower_str == "dbscan_clustering" || lower_str == "dbscan") {
-        return JobType::DBSCAN_CLUSTERING;
-    } else {
-        return JobType::UNKNOWN;
-    }
+    if (lower_str == "linear_regression" || lower_str == "linear") return JobType::LINEAR_REGRESSION;
+    if (lower_str == "logistic_regression" || lower_str == "logistic") return JobType::LOGISTIC_REGRESSION;
+    if (lower_str == "kmeans_clustering" || lower_str == "kmeans") return JobType::KMEANS_CLUSTERING;
+    if (lower_str == "dbscan_clustering" || lower_str == "dbscan") return JobType::DBSCAN_CLUSTERING;
+    return JobType::UNKNOWN;
 }
 
 std::string job_status_to_string(JobStatus status) {
